@@ -1,0 +1,26 @@
+[
+  {
+    "id": "e3709c9a",
+    "prompt": "show malaria trends from 2010 to 2024 in a line graph",
+    "title": "Malaria trends from 2010 to 2024",
+    "sql": "SELECT\n    TRY_CAST(STARTYEAR AS INT) AS [year],\n    CAST(Numeric AS FLOAT) AS [value],\n    [DIMENSION_CODE] AS [series]\nFROM health_indicators\nWHERE GHO_CODE = 'MALARIA_EST_INCIDENCE'\n  AND Numeric IS NOT NULL\n  AND TRY_CAST(STARTYEAR AS INT) IS NOT NULL\n  AND TRY_CAST(STARTYEAR AS INT) BETWEEN 2010 AND 2024\nORDER BY [year] ASC, [series] ASC;",
+    "code": "MALARIA_EST_INCIDENCE",
+    "label": "Estimated malaria incidence (per 1000 population at risk)",
+    "kind": "trend",
+    "chart_type": "line",
+    "source": "LLM",
+    "note": ""
+  },
+  {
+    "id": "5aaa3dff",
+    "prompt": "Show HIV prevalence from 2010 to 2024 in a bar graph",
+    "title": "HIV prevalence from 2010 to 2024",
+    "sql": "SELECT\n    TRY_CAST(STARTYEAR AS INT) AS [year],\n    CAST(Numeric AS FLOAT) AS [value],\n    [DIMENSION_CODE] AS [series]\nFROM health_indicators\nWHERE GHO_CODE = 'MDG_0000000029'\n  AND Numeric IS NOT NULL\n  AND TRY_CAST(STARTYEAR AS INT) IS NOT NULL\nORDER BY [year] ASC, [series] ASC;",
+    "code": "MDG_0000000029",
+    "label": "Prevalence of HIV among adults aged 15 to 49 (%)",
+    "kind": "trend",
+    "chart_type": "area",
+    "source": "LLM",
+    "note": ""
+  }
+]
