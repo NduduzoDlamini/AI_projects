@@ -3,6 +3,7 @@
 Run locally:  double-click run.bat   (or:  streamlit run app.py)
 """
 import base64
+import html
 import json
 import os
 import re
@@ -54,6 +55,7 @@ def _secret(name: str):
     return value or os.environ.get(name)
 
 
+CHART_HEIGHT = 210   # compact charts so the dashboard fits one window
 ONLINE_AI_CALLS_PER_SESSION = 25   # protects your API quota on a public app
 PERSIST = not IS_CLOUD   # online, charts live only in the visitor's session (no shared files)
 
@@ -118,16 +120,29 @@ def get_year_range(source: str, conn_str: str):
 # ---------------------------------------------------------------- sidebar
 SIDEBAR_CSS = """
 <style>
+.block-container { padding-top: 1.2rem !important; padding-bottom: 5rem !important; }
+[data-testid="stSidebarUserContent"] { padding-top: 0.5rem; }
+[data-testid="stSidebarHeader"] { height: 2.5rem; }
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.6rem; }
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] { gap: 0.4rem; }
 [data-testid="stSidebar"] [data-baseweb="select"] > div,
 [data-testid="stSidebar"] [data-baseweb="input"],
 [data-testid="stSidebar"] [data-baseweb="base-input"] { border-radius: 10px; }
-[data-testid="stSidebar"] label p { font-size: 0.82rem; opacity: 0.85; }
-.avatar { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; display: block;
-          margin: 0.3rem auto 0.8rem auto; border: 2px solid rgba(128,128,128,0.35); }
-.side-title { font-size: 1.7rem; font-weight: 700; line-height: 1.2; margin: 0.2rem 0 0.3rem 0; text-align: center; }
-.byline { font-size: 0.95rem; opacity: 0.75; margin-bottom: 1.3rem; text-align: center; }
-.side-settings { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.8rem; }
-[data-testid="stMetricValue"] { font-size: 2rem; }
+[data-testid="stSidebar"] label p { font-size: 0.8rem; opacity: 0.85; }
+.avatar { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; display: block;
+          margin: 0 auto 0.5rem auto; border: 2px solid rgba(128,128,128,0.35); }
+.side-title { font-size: 1.3rem; font-weight: 700; line-height: 1.2; margin: 0.1rem 0 0.2rem 0; text-align: center; }
+.byline { font-size: 0.85rem; opacity: 0.75; margin-bottom: 0.8rem; text-align: center; }
+.side-settings { font-size: 1rem; font-weight: 600; margin-bottom: 0.2rem; }
+.kpi-label { font-size: 0.82rem; opacity: 0.85; line-height: 1.25; }
+.kpi-value { font-size: 1.8rem; font-weight: 600; line-height: 1.25; }
+.kpi-unit { font-size: 0.8rem; font-weight: 400; opacity: 0.75; margin-left: 0.45rem; }
+.kpi-delta { display: inline-block; font-size: 0.8rem; padding: 0.05rem 0.6rem; border-radius: 1rem; margin: 0.1rem 0; }
+.kpi-delta.up { color: rgb(9,171,59); background: rgba(33,195,84,0.14); }
+.kpi-delta.down { color: rgb(255,75,75); background: rgba(255,43,43,0.14); }
+.kpi-delta.flat { color: gray; background: rgba(128,128,128,0.18); }
+.kpi-basis { font-size: 0.75rem; opacity: 0.7; line-height: 1.3; }
+.card-title { font-weight: 600; font-size: 0.95rem; line-height: 1.25; padding-top: 0.25rem; }
 [data-testid="stTextArea"] textarea { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; }
 </style>
 """
@@ -297,12 +312,16 @@ with top_box:
     st.markdown(sidebar_header_html(), unsafe_allow_html=True)
     st.markdown('<div class="side-settings">⚙️ Settings</div>', unsafe_allow_html=True)
 
-    st.selectbox("Start year", YEARS, key="start_year", on_change=_mark_custom)
-    st.selectbox("End year", YEARS, key="end_year", on_change=_mark_custom)
-    st.selectbox("Select time frame", TIMEFRAMES, key="timeframe", on_change=_apply_timeframe)
-    chart_pick = st.selectbox("Select a chart type", [t.capitalize() for t in catalog.CHART_TYPES])
-    st.caption("The year range filters every chart instantly. A chart type or years named in your "
-               "prompt override these settings (years in a prompt move the range above).")
+    c_start, c_end = st.columns(2)
+    c_start.selectbox("Start year", YEARS, key="start_year", on_change=_mark_custom)
+    c_end.selectbox("End year", YEARS, key="end_year", on_change=_mark_custom)
+    st.selectbox("Select time frame", TIMEFRAMES, key="timeframe", on_change=_apply_timeframe,
+                 help="The year range filters every chart instantly. A chart type or years named in your prompt "
+                      "override these settings (years in a prompt move the range).")
+    chart_pick = st.selectbox("Select a chart type", [t.capitalize() for t in catalog.CHART_TYPES],
+                              help="Used for new charts. You can change any chart later with its ⚙ button.")
+    per_row = st.selectbox("Charts per row", [1, 2, 3, 4], index=2,
+                           help="More charts per row fits more on one screen. Zoom the page in for a larger view.")
     st.radio("Appearance", ["Auto", "Light", "Dark"], key="appearance", horizontal=True,
              format_func=lambda x: {"Auto": "🖥️ Auto", "Light": "☀️ Light", "Dark": "🌙 Dark"}[x],
              on_change=_save_prefs, help="Auto follows your browser's theme.")
@@ -465,10 +484,7 @@ def clear_all():
 
 
 # ---------------------------------------------------------------- charts
-def split_label(label: str):
-    """'Estimated malaria incidence (per 1000 population at risk)' -> (name, unit)."""
-    m = re.match(r"^(.*?)\s*\((.*)\)\s*$", label or "")
-    return (m.group(1), m.group(2)) if m else (label or "", "")
+split_label = helpers.split_label
 
 
 def make_figure(df: pd.DataFrame, ctype: str, label: str = ""):
@@ -480,10 +496,14 @@ def make_figure(df: pd.DataFrame, ctype: str, label: str = ""):
     d = d.sort_values(["year", "series"] if "series" in d.columns else ["year"])
     color = "series" if multi else None
     name, unit = split_label(label)
+    compact = dict(height=CHART_HEIGHT, margin=dict(l=6, r=6, t=26 if multi else 8, b=6), font=dict(size=11),
+                   legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0, title_text=""))
 
     if ctype == "pie":
         text = d["year"].astype(str) + ((" - " + d["series"]) if multi else "")
-        return px.pie(d.assign(label=text), names="label", values="value")
+        fig = px.pie(d.assign(label=text), names="label", values="value")
+        fig.update_layout(**compact)
+        return fig
     if ctype == "bar":
         fig = px.bar(d, x="year", y="value", color=color, barmode="group")
     elif ctype == "area":
@@ -494,64 +514,45 @@ def make_figure(df: pd.DataFrame, ctype: str, label: str = ""):
         fig = px.line(d, x="year", y="value", color=color, markers=True)
 
     y_title = (unit[:1].upper() + unit[1:]) if unit else (name or "Value")
-    fig.update_xaxes(title_text="Year", tickformat="d")
-    fig.update_yaxes(title_text=y_title)
+    fig.update_layout(**compact)
+    fig.update_xaxes(title_text=None, tickformat="d")
+    fig.update_yaxes(title_text=y_title, title_font=dict(size=10))
     fig.update_traces(hovertemplate=("%{fullData.name}<br>" if multi else "")
                       + "Year %{x}<br>%{y:,.2f}" + (f" {unit}" if unit else "") + "<extra></extra>")
     return fig
 
 
+def _columns(spec):
+    try:
+        return st.columns(spec, vertical_alignment="center")
+    except TypeError:  # older Streamlit
+        return st.columns(spec)
+
+
 def render_card(e: dict):
     df = st.session_state.data.get(e["id"])
     title = e.get("title") or e["prompt"]
+    current = e.get("chart_type") or "line"
     with st.container(border=True):
-        st.markdown(f"**{title}**")
-        st.caption(f"{e['label']}  ·  `{e['code']}`")
+        c_title, c_opt = _columns([6, 1.4])
+        c_title.markdown(f'<div class="card-title">{html.escape(title)}</div>', unsafe_allow_html=True)
 
-        if e.get("error"):
-            st.error(f"Query failed: {e['error']}")
-        elif df is None or df.empty:
-            st.warning("No rows returned. Try another measure, or check the SQL below.")
-        elif e["kind"] == "discovery" or not {"year", "value"} <= set(df.columns):
-            st.dataframe(df)
-            if e.get("note"):
-                st.info(e["note"])
-        else:
-            view = df[df["year"].between(year_lo, year_hi)]  # sidebar range, applied instantly
-            if view.empty:
-                st.warning(f"No data between {year_lo} and {year_hi} for this indicator. "
-                           "Widen the year range in the sidebar.")
-            else:
-                kpi = helpers.compute_kpi(view, e["code"])
-                if kpi:
-                    st.metric(kpi["label"], kpi["value"], delta=kpi["delta"], delta_color=kpi["color"])
-                    _, unit = split_label(e.get("label", ""))
-                    note = " · ".join(x for x in (kpi["basis"], unit) if x)
-                    if "series" in view.columns and view["series"].nunique() > 1:
-                        note += " · breakdowns are combined; pick one in Advanced for a single series"
-                    if note:
-                        st.caption(note)
-                current = e.get("chart_type") or "line"
-                ctype = st.selectbox("Chart type", catalog.CHART_TYPES,
-                                     index=catalog.CHART_TYPES.index(current), key=f"type_{e['id']}")
-                if ctype != current:
-                    e["chart_type"] = ctype
-                    save_dashboard()
-                st.caption(f"Showing {year_lo}-{year_hi}  ·  {len(view)} data points")
-                if ctype == "table":
-                    st.dataframe(view)
-                else:
-                    st.plotly_chart(make_figure(view, ctype, e.get("label", "")), key=f"fig_{e['id']}")
-
-        with st.expander("✏️ Rename chart"):
-            st.text_input("Chart title", value=title, key=f"title_{e['id']}",
-                          on_change=rename_entry, args=(e["id"],), label_visibility="collapsed")
-        with st.expander("SQL used (you can edit it)"):
+        # everything secondary lives behind the card's ⚙ button, so the card stays small
+        holder = c_opt.popover("⚙", help="Chart type, rename, SQL, remove") if hasattr(c_opt, "popover") \
+            else c_opt.expander("⚙")
+        with holder:
+            ctype = st.selectbox("Chart type", catalog.CHART_TYPES, index=catalog.CHART_TYPES.index(current),
+                                 key=f"type_{e['id']}")
+            if ctype != current:
+                e["chart_type"] = ctype
+                save_dashboard()
+            st.text_input("Title", value=title, key=f"title_{e['id']}",
+                          on_change=rename_entry, args=(e["id"],))
+            st.markdown("**SQL (you can edit it)**")
             st.caption("Dialect: " + ("SQLite" if CFG["dialect"] == "sqlite" else "T-SQL (SQL Server)")
-                       + ". Edit the query, then press Run. One read-only SELECT only. "
-                         "To chart it, return columns named year and value.")
-            st.text_area("SQL", value=e["sql"], key=f"sql_{e['id']}", height=240, label_visibility="collapsed")
-            b1, b2, _ = st.columns([1.3, 1.1, 2])
+                       + ". One read-only SELECT. To chart it, return columns named year and value.")
+            st.text_area("SQL", value=e["sql"], key=f"sql_{e['id']}", height=220, label_visibility="collapsed")
+            b1, b2 = st.columns(2)
             b1.button("▶ Run edited SQL", key=f"run_{e['id']}", on_click=run_edited_sql, args=(e["id"],))
             if e.get("original_sql") and e["original_sql"].strip() != e["sql"].strip():
                 b2.button("↺ Reset", key=f"reset_{e['id']}", on_click=reset_sql, args=(e["id"],))
@@ -560,33 +561,59 @@ def render_card(e: dict):
             st.caption(f"Written by: {e['source']}")
             if e.get("note") and e["kind"] != "discovery":
                 st.caption(e["note"])
-        st.button("Remove", key=f"rm_{e['id']}", on_click=remove_entry, args=(e["id"],))
+            st.button("🗑 Remove chart", key=f"rm_{e['id']}", on_click=remove_entry, args=(e["id"],))
+
+        if e.get("error"):
+            st.error(f"Query failed: {e['error']}")
+        elif df is None or df.empty:
+            st.warning("No rows returned. Try another measure, or check the SQL (⚙).")
+        elif e["kind"] == "discovery" or not {"year", "value"} <= set(df.columns):
+            st.dataframe(df, height=CHART_HEIGHT)
+            if e.get("note"):
+                st.caption(e["note"])
+        else:
+            view = df[df["year"].between(year_lo, year_hi)]  # sidebar range, applied instantly
+            if view.empty:
+                st.warning(f"No data between {year_lo} and {year_hi}. Widen the year range in the sidebar.")
+            else:
+                kpi = helpers.compute_kpi(view, e["code"], e.get("label", ""))
+                if kpi:
+                    extra = ("Breakdowns are combined; pick one in Advanced for a single series."
+                             if "series" in view.columns and view["series"].nunique() > 1 else "")
+                    st.markdown(helpers.kpi_html(kpi, e["code"], e.get("label", ""), extra), unsafe_allow_html=True)
+                if ctype == "table":
+                    st.dataframe(view, height=CHART_HEIGHT)
+                else:
+                    st.plotly_chart(make_figure(view, ctype, e.get("label", "")), key=f"fig_{e['id']}")
 
 
 # ---------------------------------------------------------------- page
-def render_header():
+def header_html() -> str:
+    logo = ""
     if LOGO_FILE.exists():
         b64 = base64.b64encode(LOGO_FILE.read_bytes()).decode()
-        st.markdown(
-            f'<div style="display:flex;align-items:center;gap:16px;margin-bottom:4px">'
-            f'<img src="data:image/png;base64,{b64}" style="height:72px">'
-            f'<h1 style="margin:0;padding:0">Eswatini health trends</h1></div>',
-            unsafe_allow_html=True,
-        )
-    else:
-        st.title("Eswatini health trends")
+        logo = f'<img src="data:image/png;base64,{b64}" style="height:48px">'
+    return (f'<div style="display:flex;align-items:center;gap:12px">{logo}'
+            f'<h1 style="margin:0;padding:0;font-size:1.7rem">Eswatini health trends</h1></div>')
 
 
-render_header()
-st.caption("Ask for a trend and name the chart type, e.g. *NCD trends line graph*, "
-           "*malaria death trends 2010 to 2024 pie chart*. Each question adds a new chart; nothing is replaced.")
+if "entries" not in st.session_state:
+    load_dashboard()
+
+head, btn_clear, btn_log = _columns([6, 1.1, 1.4])
+head.markdown(header_html(), unsafe_allow_html=True)
+if btn_clear.button("Clear all", disabled=not st.session_state.entries):
+    clear_all()
+    st.rerun()
+btn_log.download_button("SQL log", data=helpers.build_sql_log(st.session_state.entries, PROJECT_NAME, db_label),
+                        file_name="sql_log.sql", mime="text/plain", disabled=not st.session_state.entries,
+                        help="Download the SQL behind every chart, with each chart's heading")
+st.caption("Ask for a trend and name the chart type, e.g. *NCD trends line graph* or "
+           "*malaria deaths 2010 to 2024 pie chart*. Each question adds a chart; nothing is replaced.")
 
 if IS_CLOUD and not DB_FILE.exists():
     st.warning("This online copy cannot reach SQL Server on your PC. Add health_indicators.db to the "
                "repository (create it with export_data.py) and redeploy.")
-
-if "entries" not in st.session_state:
-    load_dashboard()
 
 prompt = st.chat_input("e.g. Show me HIV prevalence 2005-2022 as a bar chart")
 needs_rerun = False
@@ -602,17 +629,10 @@ if prompt:
 if needs_rerun:
     st.rerun()
 
-top = st.columns([1, 1.3, 4])
-if top[0].button("Clear all charts", disabled=not st.session_state.entries):
-    clear_all()
-    st.rerun()
-top[1].download_button("Download SQL log", data=helpers.build_sql_log(st.session_state.entries, PROJECT_NAME, db_label),
-                       file_name="sql_log.sql", mime="text/plain", disabled=not st.session_state.entries)
-
 if not st.session_state.entries:
     st.info("No charts yet. Type a question below to create your first one.")
 
-cols = st.columns(2)
+cols = st.columns(per_row)
 for i, entry in enumerate(reversed(st.session_state.entries)):  # newest first
-    with cols[i % 2]:
+    with cols[i % per_row]:
         render_card(entry)
