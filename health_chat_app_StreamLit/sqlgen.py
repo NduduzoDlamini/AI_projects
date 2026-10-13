@@ -1,4 +1,4 @@
-"""Turns a chat prompt into a safe, read-only T-SQL query.
+"""Turns a chat prompt into a safe, read-only SQL query (T-SQL for SQL Server, or SQLite for the bundled data file).
 
 Flow:
   1. catalog.py decides the indicator code, year range and chart type.
@@ -30,24 +30,31 @@ def _safe_col(name):
     return name if name and re.fullmatch(r"[A-Za-z0-9_]+", name) else None
 
 
-def _conditions(lo, hi, dim, series_col=None):
-    conds = ["Numeric IS NOT NULL", "TRY_CAST(STARTYEAR AS INT) IS NOT NULL"]
+def _year_expr(dialect: str) -> str:
+    return "CAST(STARTYEAR AS INTEGER)" if dialect == "sqlite" else "TRY_CAST(STARTYEAR AS INT)"
+
+
+def _conditions(lo, hi, dim, series_col=None, dialect="sqlserver"):
+    year = _year_expr(dialect)
+    conds = ["Numeric IS NOT NULL",
+             "STARTYEAR IS NOT NULL" if dialect == "sqlite" else "TRY_CAST(STARTYEAR AS INT) IS NOT NULL"]
     if lo is not None and hi is not None:
-        conds.append(f"TRY_CAST(STARTYEAR AS INT) BETWEEN {lo} AND {hi}")
+        conds.append(f"{year} BETWEEN {lo} AND {hi}")
     elif lo is not None:
-        conds.append(f"TRY_CAST(STARTYEAR AS INT) >= {lo}")
+        conds.append(f"{year} >= {lo}")
     elif hi is not None:
-        conds.append(f"TRY_CAST(STARTYEAR AS INT) <= {hi}")
+        conds.append(f"{year} <= {hi}")
     if dim and series_col:
         conds.append(f"[{series_col}] = {_sql_literal(dim)}")
     return conds
 
 
-def template_sql(code: str, lo, hi, dim: str = "", series_col=None) -> str:
+def template_sql(code: str, lo, hi, dim: str = "", series_col=None, dialect: str = "sqlserver") -> str:
     """Raw observations, no averaging. [series] lets the app draw one line per breakdown."""
     series_col = _safe_col(series_col)
-    conds = "\n  AND ".join(_conditions(lo, hi, dim, series_col))
-    cols = "    TRY_CAST(STARTYEAR AS INT) AS [year],\n    CAST(Numeric AS FLOAT) AS [value]"
+    conds = "\n  AND ".join(_conditions(lo, hi, dim, series_col, dialect))
+    value = "CAST(Numeric AS REAL)" if dialect == "sqlite" else "CAST(Numeric AS FLOAT)"
+    cols = f"    {_year_expr(dialect)} AS [year],\n    {value} AS [value]"
     order = "[year] ASC"
     if series_col:
         cols += f",\n    [{series_col}] AS [series]"
@@ -210,15 +217,16 @@ def generate_sql(prompt: str, cfg: dict) -> dict:
     # fetches ALL years, so the sidebar range can filter the charts instantly without re-querying.
     prompt_years = catalog.year_bounds(prompt)
     lo = hi = None
+    dialect = cfg.get("dialect") or "sqlserver"
     series_col = _safe_col(cfg.get("series_col"))
     dim = (cfg.get("dim_value") or "").strip() if series_col else ""
     result = {
-        "kind": "trend", "sql": template_sql(ind["code"], lo, hi, dim, series_col), "code": ind["code"],
+        "kind": "trend", "sql": template_sql(ind["code"], lo, hi, dim, series_col, dialect), "code": ind["code"],
         "label": ind["label"], "source": "template", "note": "", "chart_type": chart_type,
         "prompt_years": prompt_years,
     }
 
-    if cfg.get("use_llm"):
+    if cfg.get("use_llm") and dialect == "sqlserver":  # the LLM prompt is written for T-SQL
         try:
             raw = call_ollama(cfg["ollama_url"], cfg["model"],
                               build_llm_prompt(prompt, ind["code"], ind["label"], lo, hi, dim, series_col))

@@ -1,5 +1,5 @@
 streamlit
 pandas
 plotly
-pyodbc
 requests
+pyodbc; platform_system == "Windows"

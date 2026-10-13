@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+dashboard.json
+sql_log.sql
+ui_prefs.json
