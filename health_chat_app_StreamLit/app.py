@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sqlite3
+import time
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -42,6 +43,18 @@ def _detect_cloud() -> bool:
 
 
 IS_CLOUD = _detect_cloud()
+
+
+def _secret(name: str):
+    """Read a setting from Streamlit secrets (online) or an environment variable (local)."""
+    try:
+        value = st.secrets.get(name)
+    except Exception:
+        value = None
+    return value or os.environ.get(name)
+
+
+ONLINE_AI_CALLS_PER_SESSION = 25   # protects your API quota on a public app
 PERSIST = not IS_CLOUD   # online, charts live only in the visitor's session (no shared files)
 
 try:
@@ -110,9 +123,9 @@ SIDEBAR_CSS = """
 [data-testid="stSidebar"] [data-baseweb="base-input"] { border-radius: 10px; }
 [data-testid="stSidebar"] label p { font-size: 0.82rem; opacity: 0.85; }
 .avatar { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; display: block;
-          margin: 0.3rem 0 0.8rem 0; border: 2px solid rgba(128,128,128,0.35); }
-.side-title { font-size: 1.7rem; font-weight: 700; line-height: 1.2; margin: 0.2rem 0 0.3rem 0; }
-.byline { font-size: 0.95rem; opacity: 0.75; margin-bottom: 1.3rem; }
+          margin: 0.3rem auto 0.8rem auto; border: 2px solid rgba(128,128,128,0.35); }
+.side-title { font-size: 1.7rem; font-weight: 700; line-height: 1.2; margin: 0.2rem 0 0.3rem 0; text-align: center; }
+.byline { font-size: 0.95rem; opacity: 0.75; margin-bottom: 1.3rem; text-align: center; }
 .side-settings { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.8rem; }
 [data-testid="stMetricValue"] { font-size: 2rem; }
 [data-testid="stTextArea"] textarea { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; }
@@ -135,20 +148,46 @@ top_box = st.sidebar.container()                          # the visible settings
 adv = st.sidebar.expander("Advanced: data and LLM")      # technical settings (bottom)
 
 with adv:
-    sources = [SRC_SQLSERVER, SRC_SQLITE]
-    default_source = SRC_SQLITE if (IS_CLOUD and DB_FILE.exists()) else SRC_SQLSERVER
-    source = st.selectbox("Data source", sources, index=sources.index(default_source),
-                          help="Online (Streamlit Cloud) the app cannot reach SQL Server on your PC, "
-                               "so it reads the bundled health_indicators.db file instead.")
+    # --- data source (online visitors cannot change it: the app only uses the bundled file)
+    if IS_CLOUD:
+        source = SRC_SQLITE if DB_FILE.exists() else SRC_SQLSERVER
+    else:
+        sources = [SRC_SQLSERVER, SRC_SQLITE]
+        source = st.selectbox("Data source", sources,
+                              help="SQL Server is your live table. The bundled file is the copy that gets deployed.")
     use_sqlite = source == SRC_SQLITE
     dialect = "sqlite" if use_sqlite else "sqlserver"
 
-    use_llm_box = st.checkbox("Let the local LLM write the SQL", value=not IS_CLOUD, disabled=use_sqlite,
-                              help="Needs Ollama running on this PC and the SQL Server data source. "
-                                   "If the LLM output is invalid or off-plan, a built-in template is used.")
-    use_llm = use_llm_box and not use_sqlite
-    ollama_url = st.text_input("Ollama URL", "http://localhost:11434/api/generate", disabled=not use_llm)
-    model = st.text_input("Model", "qwen-8k:latest", disabled=not use_llm)
+    # --- AI that writes the SQL / understands unusual requests
+    LLM_NONE = "None (built-in templates only)"
+    LLM_LOCAL = "Local Ollama (on your PC)"
+    LLM_ONLINE = "Online API (OpenAI-compatible)"
+    api_key = _secret("LLM_API_KEY")
+    api_base = _secret("LLM_BASE_URL") or "https://api.groq.com/openai/v1"
+    api_model = _secret("LLM_MODEL") or "openai/gpt-oss-120b"
+    ollama_url, model = "http://localhost:11434/api/generate", "qwen-8k:latest"
+
+    if IS_CLOUD:  # no editable URLs or keys online: a visitor could redirect the key to their own server
+        llm_choice = LLM_ONLINE if api_key else LLM_NONE
+        st.caption(f"AI: {api_model} (online)" if api_key else "AI: off (no LLM_API_KEY in this app's Secrets)")
+    else:
+        llm_opts = [LLM_LOCAL, LLM_ONLINE, LLM_NONE]
+        llm_choice = st.selectbox("AI for writing SQL", llm_opts,
+                                  help="Local uses Ollama on this PC. Online calls a hosted model such as "
+                                       "openai/gpt-oss-120b. If the AI fails, a built-in template is used.")
+        if llm_choice == LLM_LOCAL:
+            ollama_url = st.text_input("Ollama URL", ollama_url)
+            model = st.text_input("Model", model)
+        elif llm_choice == LLM_ONLINE:
+            api_base = st.text_input("API base URL", api_base)
+            api_model = st.text_input("Model", api_model)
+            if not api_key:
+                api_key = st.text_input("API key", type="password",
+                                        help="Or set LLM_API_KEY in .streamlit/secrets.toml or as an environment variable.")
+            else:
+                st.caption("API key loaded from secrets / environment.")
+    use_llm = llm_choice != LLM_NONE and not (llm_choice == LLM_ONLINE and not api_key)
+    llm_provider = "openai" if llm_choice == LLM_ONLINE else "ollama"
 
     conn_str = ""
     if use_sqlite:
@@ -157,6 +196,8 @@ with adv:
             st.caption("Using the bundled file health_indicators.db (read-only).")
         else:
             st.warning("health_indicators.db was not found next to app.py. Run export_data.py on your PC first.")
+    elif IS_CLOUD:
+        db_label = "(no data file)"
     else:
         st.markdown("**SQL Server**")
         server = st.text_input("Server", "127.0.0.1")
@@ -278,7 +319,8 @@ if _css:
     st.markdown(_css, unsafe_allow_html=True)
 
 CFG = {
-    "use_llm": use_llm, "ollama_url": ollama_url, "model": model,
+    "use_llm": use_llm, "llm_provider": llm_provider, "ollama_url": ollama_url, "model": model,
+    "api_base": api_base, "api_model": api_model, "api_key": api_key,
     "series_col": series_col, "dim_value": dim_value, "conn_str": conn_str,
     "default_chart": chart_pick.lower(), "source": source, "dialect": dialect,
 }
@@ -288,6 +330,8 @@ CFG = {
 def run_query(sql: str) -> pd.DataFrame:
     if CFG["source"] == SRC_SQLITE:
         con = _sqlite()
+        deadline = time.time() + 8   # stop runaway queries
+        con.set_progress_handler(lambda: 1 if time.time() > deadline else 0, 200000)
         try:
             df = pd.read_sql_query(sql, con)
         finally:
@@ -351,7 +395,15 @@ def load_dashboard():
 
 
 def add_chart(prompt: str):
-    gen = sqlgen.generate_sql(prompt, CFG)
+    cfg, capped = dict(CFG), False
+    if cfg["use_llm"] and cfg["llm_provider"] == "openai":
+        if st.session_state.get("_ai_calls", 0) >= ONLINE_AI_CALLS_PER_SESSION:
+            cfg["use_llm"], capped = False, True
+        else:
+            st.session_state["_ai_calls"] = st.session_state.get("_ai_calls", 0) + 1
+    gen = sqlgen.generate_sql(prompt, cfg)
+    if capped:
+        gen["note"] = (gen.get("note", "") + " AI limit for this session reached; the built-in template was used.").strip()
     df = run_query(gen["sql"])
     entry = {"id": uuid.uuid4().hex[:8], "prompt": prompt, "title": prompt, "error": None,
              "original_sql": gen["sql"], "created": datetime.now().strftime("%Y-%m-%d %H:%M"), **gen}

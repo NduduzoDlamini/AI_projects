@@ -143,14 +143,27 @@ def _join(text: str) -> str:
     return " " + " ".join(re.findall(r"[a-z0-9]+", text.lower())) + " "
 
 
+# Words that appear in many indicators. A match made ONLY of these is a weak guess.
+GENERIC_WORDS = {
+    "rate", "rates", "cases", "case", "number", "deaths", "death", "mortality", "children", "child",
+    "adults", "people", "prevalence", "incidence", "total", "coverage", "new", "treatment", "women",
+    "use", "clean", "birth", "births", "living", "premature", "crude", "confirmed",
+}
+
+
 def find_indicator(prompt: str):
-    """Return {'code','label','score'} for the best catalog match, or None."""
+    """Best catalog match: {'code','label','score','strong'} or None.
+
+    strong = at least one matched keyword is specific (e.g. 'malaria'), not just a generic word like 'children'.
+    """
     text = _join(prompt)
     best, best_score = None, 0
     for keywords, code, label in CATALOG:
-        score = sum(1 for k in keywords.split(",") if _join(k) in text)
-        if score > best_score:  # strict '>' keeps catalog order on ties
-            best, best_score = {"code": code, "label": label, "score": score}, score
+        hits = [k.strip() for k in keywords.split(",") if _join(k) in text]
+        if len(hits) > best_score:  # strict '>' keeps catalog order on ties
+            best_score = len(hits)
+            best = {"code": code, "label": label, "score": len(hits),
+                    "strong": any(h not in GENERIC_WORDS for h in hits)}
     return best
 
 
