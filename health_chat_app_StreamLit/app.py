@@ -6,7 +6,7 @@ import base64
 import json
 import re
 import uuid
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -14,10 +14,14 @@ import plotly.express as px
 import streamlit as st
 
 import catalog
+import helpers
 import sqlgen
 
 DASH_FILE = Path(__file__).with_name("dashboard.json")
 LOGO_FILE = Path(__file__).with_name("logo.png")
+SQL_LOG_FILE = Path(__file__).with_name("sql_log.sql")  # one SQL log per project
+PROJECT_NAME = "Eswatini Health Dashboard"
+PREFS_FILE = Path(__file__).with_name("ui_prefs.json")  # remembers the Appearance choice
 
 try:
     from PIL import Image
@@ -60,15 +64,13 @@ def get_year_range(conn_str: str):
 # ---------------------------------------------------------------- sidebar
 SIDEBAR_CSS = """
 <style>
-[data-testid="stSidebar"] { background-color: #000000; }
 [data-testid="stSidebar"] [data-baseweb="select"] > div,
 [data-testid="stSidebar"] [data-baseweb="input"],
-[data-testid="stSidebar"] [data-baseweb="base-input"] {
-    background-color: #1b1f27; border-radius: 10px; border: none;
-}
-[data-testid="stSidebar"] label p { font-size: 0.82rem; color: #c9ccd3; }
+[data-testid="stSidebar"] [data-baseweb="base-input"] { border-radius: 10px; }
+[data-testid="stSidebar"] label p { font-size: 0.82rem; opacity: 0.85; }
 .side-title { font-size: 1.7rem; font-weight: 700; line-height: 1.2; margin: 0.4rem 0 1.4rem 0; }
 .side-settings { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.8rem; }
+[data-testid="stMetricValue"] { font-size: 2rem; }
 </style>
 """
 st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
@@ -157,6 +159,21 @@ st.session_state.setdefault("start_year", min_y)
 st.session_state.setdefault("end_year", max_y)
 st.session_state.setdefault("timeframe", TF_CUSTOM)
 
+if "appearance" not in st.session_state:
+    try:
+        _saved = json.loads(PREFS_FILE.read_text(encoding="utf-8")).get("appearance")
+    except Exception:
+        _saved = None
+    st.session_state["appearance"] = _saved if _saved in ("Auto", "Light", "Dark") else "Auto"
+
+
+def _save_prefs():
+    try:
+        PREFS_FILE.write_text(json.dumps({"appearance": st.session_state["appearance"]}), encoding="utf-8")
+    except Exception:
+        pass
+
+
 with top_box:
     st.markdown('<div class="side-title">Eswatini Health Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="side-settings">⚙️ Settings</div>', unsafe_allow_html=True)
@@ -167,9 +184,20 @@ with top_box:
     chart_pick = st.selectbox("Select a chart type", [t.capitalize() for t in catalog.CHART_TYPES])
     st.caption("The year range filters every chart instantly. A chart type or years named in your "
                "prompt override these settings (years in a prompt move the range above).")
+    st.radio("Appearance", ["Auto", "Light", "Dark"], key="appearance", horizontal=True,
+             format_func=lambda x: {"Auto": "🖥️ Auto", "Light": "☀️ Light", "Dark": "🌙 Dark"}[x],
+             on_change=_save_prefs, help="Auto follows your browser's theme.")
     year_lo, year_hi = sorted((st.session_state["start_year"], st.session_state["end_year"]))
     if st.session_state["start_year"] > st.session_state["end_year"]:
         st.warning("Start year is after end year, so they were swapped.")
+
+try:  # the theme Streamlit is really showing (Streamlit 1.46+); otherwise the browser setting is used
+    _actual_theme = st.context.theme.type
+except Exception:
+    _actual_theme = None
+_css = helpers.appearance_css(st.session_state["appearance"], _actual_theme)
+if _css:
+    st.markdown(_css, unsafe_allow_html=True)
 
 CFG = {
     "use_llm": use_llm, "ollama_url": ollama_url, "model": model,
@@ -198,12 +226,19 @@ def run_query(sql: str) -> pd.DataFrame:
     return df
 
 
+def write_sql_log():
+    """Rewrite the project's single SQL log so it always matches the charts and their current titles."""
+    SQL_LOG_FILE.write_text(
+        helpers.build_sql_log(st.session_state.entries, PROJECT_NAME, database), encoding="utf-8")
+
+
 def save_dashboard():
-    keep = ("id", "prompt", "title", "sql", "code", "label", "kind", "chart_type", "source", "note")
+    keep = ("id", "prompt", "title", "sql", "code", "label", "kind", "chart_type", "source", "note", "created")
     DASH_FILE.write_text(
         json.dumps([{k: e.get(k) for k in keep} for e in st.session_state.entries], indent=2),
         encoding="utf-8",
     )
+    write_sql_log()
 
 
 def load_dashboard():
@@ -222,12 +257,14 @@ def load_dashboard():
             st.session_state.data[e["id"]] = None
             e["error"] = str(exc)
         st.session_state.entries.append(e)
+    write_sql_log()
 
 
 def add_chart(prompt: str):
     gen = sqlgen.generate_sql(prompt, CFG)
     df = run_query(gen["sql"])
-    entry = {"id": uuid.uuid4().hex[:8], "prompt": prompt, "title": prompt, "error": None, **gen}
+    entry = {"id": uuid.uuid4().hex[:8], "prompt": prompt, "title": prompt, "error": None,
+             "created": datetime.now().strftime("%Y-%m-%d %H:%M"), **gen}
     st.session_state.entries.append(entry)
     st.session_state.data[entry["id"]] = df
     save_dashboard()
@@ -311,6 +348,15 @@ def render_card(e: dict):
                 st.warning(f"No data between {year_lo} and {year_hi} for this indicator. "
                            "Widen the year range in the sidebar.")
             else:
+                kpi = helpers.compute_kpi(view, e["code"])
+                if kpi:
+                    st.metric(kpi["label"], kpi["value"], delta=kpi["delta"], delta_color=kpi["color"])
+                    _, unit = split_label(e.get("label", ""))
+                    note = " · ".join(x for x in (kpi["basis"], unit) if x)
+                    if "series" in view.columns and view["series"].nunique() > 1:
+                        note += " · breakdowns are combined; pick one in Advanced for a single series"
+                    if note:
+                        st.caption(note)
                 current = e.get("chart_type") or "line"
                 ctype = st.selectbox("Chart type", catalog.CHART_TYPES,
                                      index=catalog.CHART_TYPES.index(current), key=f"type_{e['id']}")
@@ -369,10 +415,12 @@ if prompt:
 if needs_rerun:
     st.rerun()
 
-top = st.columns([1, 1, 4])
+top = st.columns([1, 1.3, 4])
 if top[0].button("Clear all charts", disabled=not st.session_state.entries):
     clear_all()
     st.rerun()
+top[1].download_button("Download SQL log", data=helpers.build_sql_log(st.session_state.entries, PROJECT_NAME, database),
+                       file_name="sql_log.sql", mime="text/plain", disabled=not st.session_state.entries)
 
 if not st.session_state.entries:
     st.info("No charts yet. Type a question below to create your first one.")

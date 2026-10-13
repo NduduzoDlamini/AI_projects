@@ -188,3 +188,23 @@ def topic_words(prompt: str):
     """Words left after removing stopwords/numbers, used for the discovery search."""
     words = re.findall(r"[a-z]+", prompt.lower())
     return [w for w in dict.fromkeys(words) if w not in STOPWORDS and len(w) > 2]
+
+
+# ---------------------------------------------------------------------------
+# KPI helper (used for the total / change cards)
+# ---------------------------------------------------------------------------
+# Yearly COUNTS (flows): adding them over the selected years gives a meaningful total.
+# Everything else (rates, %, per-100k, stocks such as "people living with HIV") shows the latest value.
+COUNT_CODES = {
+    "MALARIA_TOTAL_CASES", "MALARIA_CONF_CASES", "MALARIA_IMPORTED", "MALARIA_INDIG",
+    "NCD_DTH_TOT", "TB_e_inc_num", "TB_c_newinc", "TB_rr_mdr",
+    "HIV_0000000026", "HIV_0000000006", "HEPATITIS_HBV_DEATHS_NUM",
+    "WHS3_62", "WHS3_46", "WHS3_56", "WHS3_49", "WHS3_43", "WHS3_41", "WHS3_50", "WHS3_53", "WHS3_57",
+    "CM_01", "CM_02", "CM_03", "WSH_10", "AIR_41",
+}
+
+
+
+def is_count(code: str) -> bool:
+    """True for yearly counts that can be added up over the selected years."""
+    return code in COUNT_CODES
