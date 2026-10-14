@@ -15,7 +15,7 @@ if not defined PY (
     exit /b 1
 )
 
-%PY% -c "import streamlit, plotly, pandas, pyodbc, requests" >nul 2>nul
+%PY% -c "import streamlit, plotly, pandas, pyodbc, requests, openpyxl, docx" >nul 2>nul
 if errorlevel 1 (
     echo Installing the required packages, first run only...
     %PY% -m pip install -r requirements.txt

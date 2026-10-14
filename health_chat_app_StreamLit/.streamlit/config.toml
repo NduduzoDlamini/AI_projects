@@ -1,2 +1,6 @@
 [browser]
 gatherUsageStats = false
+
+[client]
+# Visitors never see Python error details or stack traces (the admin finds them in the server log).
+showErrorDetails = "none"

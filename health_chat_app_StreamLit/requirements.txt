@@ -3,3 +3,5 @@ pandas
 plotly
 requests
 pyodbc; platform_system == "Windows"
+openpyxl
+python-docx
