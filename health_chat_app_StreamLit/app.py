@@ -79,9 +79,10 @@ st.set_page_config(page_title="Eswatini Health Trends", page_icon=_icon, layout=
 _REQUIRED = {
     "helpers.py": (helpers, ["split_label", "compute_kpi", "kpi_html", "build_sql_log", "appearance_css",
                              "chart_excel_bytes", "safe_filename", "report_facts", "report_prompt",
-                             "fallback_report", "clean_report", "report_docx_bytes"]),
+                             "fallback_report", "clean_report", "report_docx_bytes", "question_years",
+                             "filter_facts_for_question", "attach_comparison"]),
     "catalog.py": (catalog, ["is_count", "CHART_TYPES", "detect_chart_type", "find_indicator"]),
-    "sqlgen.py": (sqlgen, ["generate_sql", "is_safe_select", "call_llm"]),
+    "sqlgen.py": (sqlgen, ["generate_sql", "is_safe_select", "call_llm", "adapt_sql", "sql_dialect_of"]),
 }
 _outdated = [f for f, (mod, names) in _REQUIRED.items() if any(not hasattr(mod, n) for n in names)]
 if _outdated:
@@ -580,6 +581,15 @@ def sync_dashboard():
         e = old.get(item["id"]) or {"error": None}
         e.update({k: item.get(k) for k in STORE_KEYS})
         eid = e["id"]
+        if e.get("kind") == "trend":     # a chart saved on SQL Server must still run on SQLite (and the reverse)
+            fixed = False
+            for key in ("sql", "original_sql"):
+                if e.get(key):
+                    e[key], changed = sqlgen.adapt_sql(e[key], e.get("code"), CFG["dialect"],
+                                                       CFG["series_col"], CFG["dim_value"])
+                    fixed = fixed or changed
+            if fixed:
+                e["source"] = "template (rebuilt for this database)"
         if data.get(eid) is not None and ran.get(eid) == e["sql"]:
             new_data[eid] = data[eid]
         else:

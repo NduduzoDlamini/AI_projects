@@ -69,6 +69,29 @@ def template_sql(code: str, lo, hi, dim: str = "", series_col=None, dialect: str
     )
 
 
+_TSQL_ONLY = re.compile(r"\b(try_cast|isnull|getdate|datepart|datediff|convert|nvarchar)\s*\(|\btop\s+\d|\bdbo\.|\bnvarchar\b",
+                       re.IGNORECASE)
+_SQLITE_ONLY = re.compile(r"\bas\s+integer\b|\b(ifnull|substr|strftime|group_concat)\s*\(|\|\|", re.IGNORECASE)
+
+
+def sql_dialect_of(sql: str):
+    """'sqlserver' / 'sqlite' if the SQL clearly uses that database's own functions, else None (works on both)."""
+    if _TSQL_ONLY.search(sql or ""):
+        return "sqlserver"
+    if _SQLITE_ONLY.search(sql or ""):
+        return "sqlite"
+    return None
+
+
+def adapt_sql(sql: str, code: str, dialect: str, series_col=None, dim: str = ""):
+    """If a saved chart's SQL was written for the other database, rebuild it for this one from the chart's
+    indicator code. Returns (sql, changed)."""
+    written_for = sql_dialect_of(sql)
+    if not sql or not code or written_for in (None, dialect):
+        return sql, False
+    return template_sql(code, None, None, dim, _safe_col(series_col), dialect), True
+
+
 def discovery_sql(words) -> str:
     likes = " OR ".join(
         f"GHO_CODE LIKE '%{w}%' OR GHO_DISPLAY LIKE '%{w}%'" for w in words  # words are [a-z]+ only
@@ -104,7 +127,10 @@ def is_safe_select(sql: str):
     return True, ""
 
 
-def follows_plan(sql: str, code: str, lo, hi, dim: str):
+def follows_plan(sql: str, code: str, lo, hi, dim: str, dialect=None):
+    wrong = sql_dialect_of(sql)
+    if dialect and wrong and wrong != dialect:
+        return False, f"written for {'SQL Server' if wrong == 'sqlserver' else 'SQLite'}, not for this database"
     if code not in sql:
         return False, "wrong indicator code"
     for y in (lo, hi):
@@ -291,7 +317,7 @@ def generate_sql(prompt: str, cfg: dict) -> dict:
             sql = clean_sql(raw)
             ok, why = is_safe_select(sql)
             if ok:
-                ok, why = follows_plan(sql, ind["code"], lo, hi, dim)
+                ok, why = follows_plan(sql, ind["code"], lo, hi, dim, dialect)
             if ok:
                 result.update(sql=sql, source=f"AI ({llm_name(cfg)})")
             else:
