@@ -84,11 +84,15 @@ _REQUIRED = {
     "catalog.py": (catalog, ["is_count", "CHART_TYPES", "detect_chart_type", "find_indicator"]),
     "sqlgen.py": (sqlgen, ["generate_sql", "is_safe_select", "call_llm", "adapt_sql", "sql_dialect_of"]),
 }
-_outdated = [f for f, (mod, names) in _REQUIRED.items() if any(not hasattr(mod, n) for n in names)]
+_outdated = {f: [n for n in names if not hasattr(mod, n)] for f, (mod, names) in _REQUIRED.items()}
+_outdated = {f: miss for f, miss in _outdated.items() if miss}
 if _outdated:
+    _where = {f: getattr(_REQUIRED[f][0], "__file__", "?") for f in _outdated}
     st.error("These files in your repository are out of date: **" + ", ".join(_outdated) + "**. "
              "Upload the latest version of every project file (app.py, catalog.py, helpers.py, sqlgen.py) "
-             "to GitHub, then reboot the app.")
+             "to GitHub, into the SAME folder as app.py, then reboot the app.")
+    for _f, _miss in _outdated.items():
+        st.caption(f"{_f}: missing {', '.join(_miss)}  ·  loaded from {_where[_f]}")
     st.stop()
 
 
