@@ -68,6 +68,19 @@ except Exception:
 
 st.set_page_config(page_title="Eswatini Health Trends", page_icon=_icon, layout="wide")
 
+# ---- guard: all project files must come from the same version (a common mistake when re-uploading to GitHub)
+_REQUIRED = {
+    "helpers.py": (helpers, ["split_label", "compute_kpi", "kpi_html", "build_sql_log", "appearance_css"]),
+    "catalog.py": (catalog, ["is_count", "CHART_TYPES", "detect_chart_type", "find_indicator"]),
+    "sqlgen.py": (sqlgen, ["generate_sql", "is_safe_select", "call_llm"]),
+}
+_outdated = [f for f, (mod, names) in _REQUIRED.items() if any(not hasattr(mod, n) for n in names)]
+if _outdated:
+    st.error("These files in your repository are out of date: **" + ", ".join(_outdated) + "**. "
+             "Upload the latest version of every project file (app.py, catalog.py, helpers.py, sqlgen.py) "
+             "to GitHub, then reboot the app.")
+    st.stop()
+
 
 # ---------------------------------------------------------------- database helpers
 def _sqlite():
