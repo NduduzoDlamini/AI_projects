@@ -194,6 +194,8 @@ def detect_chart_type(prompt: str, default: str = "line") -> str:
     for ctype, words in CHART_WORDS:
         if any(f" {w} " in text for w in words):
             return ctype
+    if default is None:  # caller wants to know "no chart type was named"
+        return None
     return default if default in CHART_TYPES else "line"
 
 

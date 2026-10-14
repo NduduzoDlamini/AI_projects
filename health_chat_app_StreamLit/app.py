@@ -55,6 +55,7 @@ def _secret(name: str):
     return value or os.environ.get(name)
 
 
+DEFAULT_START_YEAR = 2010   # the year range starts here by default
 CHART_HEIGHT = 210   # compact charts so the dashboard fits one window
 ONLINE_AI_CALLS_PER_SESSION = 25   # protects your API quota on a public app
 PERSIST = not IS_CLOUD   # online, charts live only in the visitor's session (no shared files)
@@ -120,7 +121,7 @@ def get_year_range(source: str, conn_str: str):
 # ---------------------------------------------------------------- sidebar
 SIDEBAR_CSS = """
 <style>
-.block-container { padding-top: 1.2rem !important; padding-bottom: 5rem !important; }
+.block-container { padding-top: 3.8rem !important; padding-bottom: 5rem !important; }
 [data-testid="stSidebarUserContent"] { padding-top: 0.5rem; }
 [data-testid="stSidebarHeader"] { height: 2.5rem; }
 [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.6rem; }
@@ -137,10 +138,11 @@ SIDEBAR_CSS = """
 .kpi-label { font-size: 0.82rem; opacity: 0.85; line-height: 1.25; }
 .kpi-value { font-size: 1.8rem; font-weight: 600; line-height: 1.25; }
 .kpi-unit { font-size: 0.8rem; font-weight: 400; opacity: 0.75; margin-left: 0.45rem; }
-.kpi-delta { display: inline-block; font-size: 0.8rem; padding: 0.05rem 0.6rem; border-radius: 1rem; margin: 0.1rem 0; }
-.kpi-delta.up { color: rgb(9,171,59); background: rgba(33,195,84,0.14); }
-.kpi-delta.down { color: rgb(255,75,75); background: rgba(255,43,43,0.14); }
-.kpi-delta.flat { color: gray; background: rgba(128,128,128,0.18); }
+.kpi-delta { display: inline-block; font-size: 0.8rem; padding: 0.1rem 0.65rem; border-radius: 1rem; margin: 0.1rem 0; }
+.kpi-delta { color: #ffffff; font-weight: 600; }
+.kpi-delta.up { background: #188038; }
+.kpi-delta.down { background: #d93025; }
+.kpi-delta.flat { background: #6b7280; }
 .kpi-basis { font-size: 0.75rem; opacity: 0.7; line-height: 1.3; }
 .card-title { font-weight: 600; font-size: 0.95rem; line-height: 1.25; padding-top: 0.25rem; }
 [data-testid="stTextArea"] textarea { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; }
@@ -271,6 +273,16 @@ def _apply_timeframe():
     st.session_state["start_year"], st.session_state["end_year"] = lo, hi
 
 
+def _reset_chart_types():
+    """Sidebar chart type applies to EVERY chart: drop per-chart overrides and sync each card's own box."""
+    new = st.session_state["chart_pick"].lower()
+    for e in st.session_state.get("entries", []):
+        if e.get("kind") == "trend":
+            e["chart_type"] = None          # None = follow the sidebar
+            st.session_state[f"type_{e['id']}"] = new
+    save_dashboard()
+
+
 def _mark_custom():
     st.session_state["timeframe"] = TF_CUSTOM
 
@@ -285,7 +297,7 @@ if "_pending_range" in st.session_state:
 for _k in ("start_year", "end_year"):
     if st.session_state.get(_k) not in YEARS:
         st.session_state.pop(_k, None)
-st.session_state.setdefault("start_year", min_y)
+st.session_state.setdefault("start_year", min(max(min_y, DEFAULT_START_YEAR), max_y))
 st.session_state.setdefault("end_year", max_y)
 st.session_state.setdefault("timeframe", TF_CUSTOM)
 
@@ -319,7 +331,9 @@ with top_box:
                  help="The year range filters every chart instantly. A chart type or years named in your prompt "
                       "override these settings (years in a prompt move the range).")
     chart_pick = st.selectbox("Select a chart type", [t.capitalize() for t in catalog.CHART_TYPES],
-                              help="Used for new charts. You can change any chart later with its ⚙ button.")
+                              key="chart_pick", on_change=_reset_chart_types,
+                              help="Applies to every chart on the dashboard. A chart's own ⚙ button can override it "
+                                   "until you change this again. A type named in a new prompt is used for that chart.")
     per_row = st.selectbox("Charts per row", [1, 2, 3, 4], index=2,
                            help="More charts per row fits more on one screen. Zoom the page in for a larger view.")
     st.radio("Appearance", ["Auto", "Light", "Dark"], key="appearance", horizontal=True,
@@ -464,6 +478,13 @@ def reset_sql(eid: str):
         run_edited_sql(eid, "original SQL restored")
 
 
+def set_card_type(eid: str):
+    e = _find(eid)
+    if e:
+        e["chart_type"] = st.session_state.get(f"type_{eid}")
+        save_dashboard()
+
+
 def rename_entry(eid: str):
     new = st.session_state.get(f"title_{eid}", "").strip()
     for e in st.session_state.entries:
@@ -532,7 +553,7 @@ def _columns(spec):
 def render_card(e: dict):
     df = st.session_state.data.get(e["id"])
     title = e.get("title") or e["prompt"]
-    current = e.get("chart_type") or "line"
+    current = e.get("chart_type") or CFG["default_chart"]   # own choice, else the sidebar's
     with st.container(border=True):
         c_title, c_opt = _columns([6, 1.4])
         c_title.markdown(f'<div class="card-title">{html.escape(title)}</div>', unsafe_allow_html=True)
@@ -542,10 +563,7 @@ def render_card(e: dict):
             else c_opt.expander("⚙")
         with holder:
             ctype = st.selectbox("Chart type", catalog.CHART_TYPES, index=catalog.CHART_TYPES.index(current),
-                                 key=f"type_{e['id']}")
-            if ctype != current:
-                e["chart_type"] = ctype
-                save_dashboard()
+                                 key=f"type_{e['id']}", on_change=set_card_type, args=(e["id"],))
             st.text_input("Title", value=title, key=f"title_{e['id']}",
                           on_change=rename_entry, args=(e["id"],))
             st.markdown("**SQL (you can edit it)**")

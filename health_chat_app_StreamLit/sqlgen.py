@@ -241,7 +241,7 @@ def pick_indicator_with_llm(prompt: str, cfg: dict):
 # --------------------------------------------------------------------------
 def generate_sql(prompt: str, cfg: dict) -> dict:
     """Return {'kind','sql','code','label','source','note','chart_type'}."""
-    chart_type = catalog.detect_chart_type(prompt, cfg.get("default_chart") or "line")
+    chart_type = catalog.detect_chart_type(prompt, None)  # None = follow the sidebar chart type
 
     code = catalog.explicit_code(prompt)
     ai_note = ""

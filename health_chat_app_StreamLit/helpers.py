@@ -124,7 +124,7 @@ def build_sql_log(entries, project: str, database: str) -> str:
 
 
 _FLIP = ("html { filter: invert(1) hue-rotate(180deg); } "
-         "img, video, canvas { filter: invert(1) hue-rotate(180deg); }")
+         "img, video, canvas, .kpi-delta { filter: invert(1) hue-rotate(180deg); }")
 
 
 def appearance_css(choice: str, actual=None) -> str:
