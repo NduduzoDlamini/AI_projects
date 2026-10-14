@@ -1,8 +1,8 @@
 -- ======================================================================
 -- Eswatini Health Dashboard - SQL log
--- Updated  : 2026-10-14 06:51
+-- Updated  : 2026-10-14 18:03
 -- Database : DataAnalysis
--- Charts   : 2
+-- Charts   : 3
 -- ======================================================================
 
 -- ----------------------------------------------------------------------
@@ -36,6 +36,23 @@ SELECT
     [DIMENSION_CODE] AS [series]
 FROM health_indicators
 WHERE GHO_CODE = 'MDG_0000000029'
+  AND Numeric IS NOT NULL
+  AND TRY_CAST(STARTYEAR AS INT) IS NOT NULL
+ORDER BY [year] ASC, [series] ASC;
+
+-- ----------------------------------------------------------------------
+-- [3] Number of new HIV infections
+-- Prompt    : show me the number of new HIV infections
+-- Indicator : HIV_0000000026 - Number of new HIV infections
+-- Created   : 2026-10-14 17:48
+-- SQL by    : AI (qwen-8k:latest)
+-- ----------------------------------------------------------------------
+SELECT
+    TRY_CAST(STARTYEAR AS INT) AS [year],
+    CAST(Numeric AS FLOAT) AS [value],
+    [DIMENSION_CODE] AS [series]
+FROM health_indicators
+WHERE GHO_CODE = 'HIV_0000000026'
   AND Numeric IS NOT NULL
   AND TRY_CAST(STARTYEAR AS INT) IS NOT NULL
 ORDER BY [year] ASC, [series] ASC;

@@ -19,6 +19,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit.components.v1 as components
 
 import catalog
 import helpers
@@ -221,6 +222,9 @@ SIDEBAR_CSS = """
 .kpi-basis { font-size: 0.75rem; opacity: 0.7; line-height: 1.3; }
 .card-title { font-weight: 600; font-size: 0.95rem; line-height: 1.25; padding-top: 0.25rem; }
 [data-testid="stTextArea"] textarea { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; }
+/* the pointer must land on the gear / AI report button itself, never on its label or arrow inside it,
+   so a stray browser tip (just the gear symbol) cannot appear */
+[data-testid="stPopoverButton"] *, [data-testid="stPopover"] > button * { pointer-events: none !important; }
 </style>
 """
 st.markdown(SIDEBAR_CSS, unsafe_allow_html=True)
@@ -377,6 +381,18 @@ def _reset_chart_types():
         st.session_state["_types"] = {eid: new for eid in trend_ids}
 
 
+def _reset_labels():
+    """Sidebar 'Show data labels' applies to EVERY chart. Admin: saved for the shared dashboard. User: this visitor only."""
+    new = bool(st.session_state.get("labels_all"))
+    trend_ids = [e["id"] for e in st.session_state.get("entries", []) if e.get("kind") == "trend"]
+    for eid in trend_ids:
+        st.session_state[f"labels_{eid}"] = new
+    if is_admin():
+        _store_update(lambda items: [({**it, "show_labels": None} if it.get("kind") == "trend" else it) for it in items])
+    else:
+        st.session_state["_labels"] = {eid: new for eid in trend_ids}
+
+
 def _mark_custom():
     st.session_state["timeframe"] = TF_CUSTOM
 
@@ -428,6 +444,9 @@ with top_box:
                               key="chart_pick", on_change=_reset_chart_types,
                               help="Applies to every chart on the dashboard. A chart's own ⚙ button can override it "
                                    "until you change this again. A type named in a new prompt is used for that chart.")
+    show_labels_all = st.checkbox("Show data labels", key="labels_all", on_change=_reset_labels,
+                                  help="Writes the value on every point or bar. Applies to every chart; a chart's own "
+                                       "⚙ button can override it until you change this again.")
     per_row = st.selectbox("Charts per row", [1, 2, 3, 4], index=2,
                            help="More charts per row fits more on one screen. Zoom the page in for a larger view.")
     st.radio("Appearance", ["Auto", "Light", "Dark"], key="appearance", horizontal=True,
@@ -450,6 +469,7 @@ CFG = {
     "api_base": api_base, "api_model": api_model, "api_key": api_key,
     "series_col": series_col, "dim_value": dim_value, "conn_str": conn_str,
     "default_chart": chart_pick.lower(), "source": source, "dialect": dialect,
+    "show_labels": bool(show_labels_all),
 }
 
 
@@ -484,7 +504,7 @@ def run_query(sql: str) -> pd.DataFrame:
 
 # ---- the dashboard is SHARED by every visitor and saved in dashboard.json, so charts survive a reload.
 STORE_KEYS = ("id", "prompt", "title", "sql", "original_sql", "code", "label", "kind", "chart_type",
-              "source", "note", "created")
+              "source", "note", "created", "show_labels")
 
 
 @st.cache_resource
@@ -649,6 +669,17 @@ def set_card_type(eid: str):
         st.session_state.setdefault("_types", {})[eid] = chosen
 
 
+def set_card_labels(eid: str):
+    """Admin: saved for everyone. User: only changes what this visitor sees."""
+    if not _find(eid):
+        return
+    chosen = bool(st.session_state.get(f"labels_{eid}"))
+    if is_admin():
+        _store_patch(eid, show_labels=chosen)
+    else:
+        st.session_state.setdefault("_labels", {})[eid] = chosen
+
+
 def can_rename(eid: str) -> bool:
     """Admin: any chart. User: only charts created in this browser session (lost on reload)."""
     return is_admin() or eid in st.session_state.get("_my_charts", set())
@@ -695,20 +726,30 @@ def excel_button(e: dict, title: str, df: pd.DataFrame, subtitle: str, full: pd.
                        key=f"xlsx_{e['id']}", help="Download this chart's data as an Excel file")
 
 
-def generate_report(focus: str):
-    facts = helpers.report_facts(st.session_state.entries, st.session_state.data, year_lo, year_hi)
+def generate_report(question: str):
+    """A general report, or (if a question is typed) a report that answers that question from the charts."""
+    question = " ".join((question or "").split())[:300]
+    qy = helpers.question_years(question)
+    lo, hi = (min([year_lo] + qy), max([year_hi] + qy)) if qy else (year_lo, year_hi)   # years named in the question
+    facts = helpers.report_facts(st.session_state.entries, st.session_state.data, lo, hi)
     if not facts:
         st.warning("There is no chart data to report on yet. Ask for a chart first.")
         return
+    facts, found = helpers.filter_facts_for_question(facts, question)    # only charts about the question
+    if not found:
+        st.warning(f"None of the charts on the dashboard are about \"{question}\". Ask for a chart on that topic "
+                   "first (for example 'HIV new infections 2010-2024'), then ask your question again.")
+        return
     trimmed = len(facts) > REPORT_MAX_CHARTS
     facts = facts[-REPORT_MAX_CHARTS:]       # newest charts
+    helpers.attach_comparison(facts, question)        # the numbers are worked out here, not by the AI
     cfg, capped = _ai_budget()
     text, by, note = "", "built-in summary (no AI)", ""
     if cfg["use_llm"]:
         try:
             with st.spinner("The AI is writing your report..."):
                 raw = sqlgen.call_llm(cfg, helpers.REPORT_SYSTEM,
-                                      helpers.report_prompt(facts, focus, year_lo, year_hi), timeout=180)
+                                      helpers.report_prompt(facts, question, lo, hi), timeout=180)
             text = helpers.clean_report(raw)
             by = f"AI ({sqlgen.llm_name(cfg)})"
         except Exception as exc:
@@ -719,24 +760,24 @@ def generate_report(focus: str):
     elif capped:
         note = "The AI limit for this session was reached, so a built-in summary was written instead."
     if not text:
-        text = helpers.fallback_report(facts, year_lo, year_hi)
+        text = helpers.fallback_report(facts, lo, hi, question)
     if trimmed:
         note = (note + " " if note else "") + f"The report covers the {REPORT_MAX_CHARTS} newest charts."
     when = datetime.now().strftime("%Y-%m-%d %H:%M")
-    meta = f"Eswatini · years {year_lo}-{year_hi} · written by {by} · {when} · check the figures before sharing"
-    st.session_state["report"] = {"text": text, "by": by, "note": note, "years": f"{year_lo}-{year_hi}", "when": when,
+    meta = f"Eswatini · years {lo}-{hi} · written by {by} · {when} · check the figures before sharing"
+    st.session_state["report"] = {"text": text, "by": by, "note": note, "years": f"{lo}-{hi}", "when": when,
+                                  "question": question, "charts": [f["title"] for f in facts],
                                   "docx": helpers.report_docx_bytes(text, meta, facts)}
 
 
 def render_report_button(holder):
-    pop = holder.popover("📝 AI report", help="Write a short report from the charts on the dashboard") \
-        if hasattr(holder, "popover") else holder.expander("📝 AI report")
+    pop = holder.popover("📝 AI report") if hasattr(holder, "popover") else holder.expander("📝 AI report")
     with pop:
-        st.caption("Writes a short report from the charts below, for the years chosen in the sidebar.")
-        focus = st.text_input("Focus (optional)", key="report_focus", max_chars=300,
-                              placeholder="e.g. what changed most since 2015")
+        st.caption("Ask a question about the charts, or leave it empty for a general report.")
+        question = st.text_input("Your question (optional)", key="report_focus", max_chars=300,
+                                 placeholder="e.g. How was HIV in 2024 compared to 2022?")
         if st.button("Generate report", key="report_go", disabled=not st.session_state.entries):
-            generate_report(focus)
+            generate_report(question)
 
 
 def render_report():
@@ -747,6 +788,8 @@ def render_report():
         st.markdown(rep["text"])
         st.caption(f"Years {rep['years']} · written by {rep['by']} · {rep['when']}. "
                    "Check the figures before sharing.")
+        if rep.get("question"):
+            st.caption("Charts used: " + "; ".join(rep.get("charts", [])))
         if rep["note"]:
             st.caption(rep["note"])
         c1, c2, c3, _ = _columns([1.7, 1.5, 0.9, 5])
@@ -761,7 +804,7 @@ def render_report():
 split_label = helpers.split_label
 
 
-def make_figure(df: pd.DataFrame, ctype: str, label: str = ""):
+def make_figure(df: pd.DataFrame, ctype: str, label: str = "", show_labels: bool = False):
     d = df.copy()
     multi = False
     if "series" in d.columns:
@@ -776,6 +819,8 @@ def make_figure(df: pd.DataFrame, ctype: str, label: str = ""):
     if ctype == "pie":
         text = d["year"].astype(str) + ((" - " + d["series"]) if multi else "")
         fig = px.pie(d.assign(label=text), names="label", values="value")
+        if show_labels:
+            fig.update_traces(texttemplate="%{value:,.2~f} (%{percent})", textposition="auto")
         fig.update_layout(**compact)
         return fig
     if ctype == "bar":
@@ -793,14 +838,146 @@ def make_figure(df: pd.DataFrame, ctype: str, label: str = ""):
     fig.update_yaxes(title_text=y_title, title_font=dict(size=10))
     fig.update_traces(hovertemplate=("%{fullData.name}<br>" if multi else "")
                       + "Year %{x}<br>%{y:,.2f}" + (f" {unit}" if unit else "") + "<extra></extra>")
+    if show_labels:
+        fig.update_traces(texttemplate="%{y:,.2~f}", textfont=dict(size=9), cliponaxis=False,
+                          textposition="outside" if ctype == "bar" else "top center")
+        if ctype in ("line", "area", "scatter"):
+            fig.update_traces(mode={"line": "lines+markers+text", "area": "lines+text", "scatter": "markers+text"}[ctype])
+        fig.update_layout(margin=dict(l=6, r=6, t=34 if multi else 18, b=6))
     return fig
 
 
-def _columns(spec):
+def _columns(spec, gap=None):
+    kw = {"vertical_alignment": "center"}
+    if gap:
+        kw["gap"] = gap
     try:
-        return st.columns(spec, vertical_alignment="center")
+        return st.columns(spec, **kw)
     except TypeError:  # older Streamlit
         return st.columns(spec)
+
+
+_CLOSE_X_HTML = """
+<div style="display:flex;justify-content:flex-end;margin:0;padding:0">
+  <button id="x" type="button" title="Close" aria-label="Close settings"
+    style="border:0;background:transparent;color:#9aa0a6;font:600 18px/1 sans-serif;cursor:pointer;
+           padding:2px 6px;border-radius:6px">&#10005;</button>
+</div>
+<script>
+  const b = document.getElementById("x");
+  b.onmouseenter = () => b.style.color = "#ff4b4b";
+  b.onmouseleave = () => b.style.color = "#9aa0a6";
+  // The pointer moving into this little frame never reaches the page, so the page never learns that it left
+  // the gear button and its hover tip stays on screen. Tell the page the pointer left, so tips only show
+  // while a button is really hovered.
+  function hideTips() {
+    try {
+      window.parent.document.querySelectorAll('[data-testid="stPopover"] button, button[data-testid="stPopoverButton"]')
+        .forEach(btn => {
+          btn.dispatchEvent(new MouseEvent("mouseout", {bubbles: true, relatedTarget: null}));
+          btn.dispatchEvent(new MouseEvent("mouseleave", {bubbles: false, relatedTarget: null}));
+        });
+    } catch (err) { /* sandboxed: nothing to do */ }
+  }
+  hideTips();
+  setTimeout(hideTips, 250);
+  document.documentElement.addEventListener("mouseenter", hideTips);
+  b.onclick = () => {
+    try {
+      const d = window.parent.document;
+      // clicking the open popover's own button toggles it shut
+      const t = d.querySelector('[data-testid="stPopover"] button[aria-expanded="true"]')
+             || d.querySelector('button[data-testid="stPopoverButton"][aria-expanded="true"]');
+      if (t) {
+        t.click();
+        if (t.blur) t.blur();
+        hideTips();
+        setTimeout(hideTips, 150);
+        return;
+      }
+      d.dispatchEvent(new KeyboardEvent("keydown", {key: "Escape", code: "Escape", keyCode: 27, bubbles: true}));
+      hideTips();
+    } catch (err) { /* sandboxed: nothing to do */ }
+  };
+  // take the X out of the layout: float it in the popover's top padding so it uses no vertical space
+  try {
+    const fe = window.frameElement;
+    const box = fe.closest('[data-testid="stElementContainer"]') || fe.closest('.element-container');
+    if (box) {
+      const gap = parseFloat(getComputedStyle(box.parentElement).rowGap) || 16;
+      for (let n = fe.parentElement; n && n !== box; n = n.parentElement) {
+        n.style.height = "0"; n.style.minHeight = "0"; n.style.overflow = "visible";
+      }
+      Object.assign(box.style, {position: "sticky", top: "1rem", height: "0", minHeight: "0",
+                                margin: "0 0 -" + gap + "px 0", zIndex: "20", overflow: "visible"});
+      Object.assign(fe.style, {position: "absolute", top: "-16px", right: "-6px", width: "34px", height: "28px"});
+    }
+  } catch (err) { /* keeps the normal layout */ }
+</script>
+"""
+
+
+_HOVER_TIPS_HTML = """
+<script>
+  (function () {
+    const w = window.parent;
+    w.__hoverTips = %s;
+    if (w.__hoverTipsOn) return;
+    w.__hoverTipsOn = true;
+    const code = `
+      (function () {
+        function apply() {
+          const tips = window.__hoverTips || {};
+          document.querySelectorAll('[data-testid="stPopover"] button, button[data-testid="stPopoverButton"]')
+            .forEach(function (btn) {
+              const txt = (btn.innerText || "").trim();
+              const tip = txt.indexOf("\u2699") >= 0 ? tips.gear : (txt.indexOf("AI report") >= 0 ? tips.report : "");
+              // clear any stray tip (for example just the gear symbol) left on the label, the arrow or a wrapper
+              btn.querySelectorAll("[title]").forEach(function (el) { el.removeAttribute("title"); });
+              btn.querySelectorAll("svg title").forEach(function (el) { el.remove(); });
+              let up = btn.parentElement;
+              for (let i = 0; up && i < 6; i++, up = up.parentElement) {
+                if (up.hasAttribute("title")) up.removeAttribute("title");
+              }
+              if (tip && btn.getAttribute("aria-expanded") !== "true") {
+                if (btn.title !== tip) btn.title = tip;
+              } else if (btn.hasAttribute("title")) {
+                btn.removeAttribute("title");     // no tip while the settings are open
+              }
+            });
+        }
+        let queued = false;
+        function soon() { if (queued) return; queued = true; requestAnimationFrame(function () { queued = false; apply(); }); }
+        apply();
+        new MutationObserver(soon).observe(document.body, {childList: true, subtree: true,
+                                                           attributes: true, attributeFilter: ["aria-expanded", "title"]});
+      })();`;
+    const s = w.document.createElement("script");
+    s.textContent = code;
+    w.document.head.appendChild(s);
+  })();
+</script>
+"""
+
+
+def install_hover_tips():
+    """Hover tips for the gear and AI report buttons. They use the browser's own tip, so they show only while the
+    pointer is on that button and go away when it leaves or the settings open (Streamlit's own tip can get stuck)."""
+    tips = {"gear": "Chart type, data labels, rename, SQL, remove" if is_admin()
+                    else "Chart type, data labels (and rename, for charts you made)",
+            "report": "Write a short report from the charts on the dashboard"}
+    try:
+        components.html(_HOVER_TIPS_HTML % json.dumps(tips), height=0)
+    except Exception:
+        pass
+
+
+def close_popover_x():
+    """A small X at the top-right of a popover that closes it (Streamlit has no built-in close button)."""
+    try:
+        components.html(_CLOSE_X_HTML, height=30)
+    except Exception:
+        pass
 
 
 def render_card(e: dict):
@@ -810,16 +987,28 @@ def render_card(e: dict):
     current = st.session_state.get("_types", {}).get(e["id"]) or e.get("chart_type") or CFG["default_chart"]
     if current not in catalog.CHART_TYPES:
         current = "line"
+    # data labels: this visitor's own choice (users only), else the chart's saved choice, else the sidebar's
+    mine = {} if is_admin() else st.session_state.get("_labels", {})
+    show = mine.get(e["id"])
+    if show is None:
+        show = e.get("show_labels")
+    if show is None:
+        show = CFG["show_labels"]
+    show = bool(show)
+    st.session_state[f"labels_{e['id']}"] = show
     with st.container(border=True):
         c_title, c_opt = _columns([6, 1.4])
         c_title.markdown(f'<div class="card-title">{html.escape(title)}</div>', unsafe_allow_html=True)
 
         # everything secondary lives behind the card's ⚙ button, so the card stays small
-        help_txt = "Chart type, rename, SQL, remove" if is_admin() else "Chart type (and rename, for charts you made)"
-        holder = c_opt.popover("⚙", help=help_txt) if hasattr(c_opt, "popover") else c_opt.expander("⚙")
+        holder = c_opt.popover("⚙") if hasattr(c_opt, "popover") else c_opt.expander("⚙")
         with holder:
+            if hasattr(c_opt, "popover"):
+                close_popover_x()
             ctype = st.selectbox("Chart type", catalog.CHART_TYPES, index=catalog.CHART_TYPES.index(current),
                                  key=f"type_{e['id']}", on_change=set_card_type, args=(e["id"],))
+            if ctype != "table" and e.get("kind") != "discovery":
+                st.checkbox("Show data labels", key=f"labels_{e['id']}", on_change=set_card_labels, args=(e["id"],))
             if can_rename(e["id"]):
                 st.text_input("Title", value=title, key=f"title_{e['id']}", max_chars=150,
                               on_change=rename_entry, args=(e["id"],))
@@ -861,7 +1050,7 @@ def render_card(e: dict):
                 if ctype == "table":
                     st.dataframe(view, height=CHART_HEIGHT)
                 else:
-                    st.plotly_chart(make_figure(view, ctype, e.get("label", "")), key=f"fig_{e['id']}")
+                    st.plotly_chart(make_figure(view, ctype, e.get("label", ""), show), key=f"fig_{e['id']}")
                 excel_button(e, title, view,
                              f"{e.get('label', '')} ({e['code']}) · years {year_lo}-{year_hi}".strip(), full=df)
 
@@ -872,7 +1061,7 @@ def header_html() -> str:
     if LOGO_FILE.exists():
         b64 = base64.b64encode(LOGO_FILE.read_bytes()).decode()
         logo = f'<img src="data:image/png;base64,{b64}" style="height:48px">'
-    return (f'<div style="display:flex;align-items:center;gap:12px">{logo}'
+    return (f'<div class="hdr-row-marker" style="display:flex;align-items:center;gap:12px">{logo}'
             f'<h1 style="margin:0;padding:0;font-size:1.7rem">Eswatini health trends</h1></div>')
 
 
@@ -887,10 +1076,18 @@ if is_admin():   # back-up button lives in the same Advanced section
         st.download_button("Download dashboard.json", data=json.dumps(_store_read(), indent=2),
                            file_name="dashboard.json", mime="application/json", key="dash_backup")
 
+# header buttons: shrink their columns to the button width so they sit close together on the right
+st.markdown("""<style>
+div[data-testid="stHorizontalBlock"]:has(.hdr-row-marker) { gap: 0.5rem !important; }
+div[data-testid="stHorizontalBlock"]:has(.hdr-row-marker) > div[data-testid="stColumn"]:not(:first-child),
+div[data-testid="stHorizontalBlock"]:has(.hdr-row-marker) > div[data-testid="column"]:not(:first-child) {
+    flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; }
+div[data-testid="stHorizontalBlock"]:has(.hdr-row-marker) > div:first-child { flex: 1 1 0 !important; }
+</style>""", unsafe_allow_html=True)
 if is_admin():
-    head, btn_report, btn_clear, btn_log = _columns([5, 1.5, 1.1, 1.4])
+    head, btn_report, btn_clear, btn_log = _columns([10, 1.5, 1.0, 1.0], gap="small")
 else:
-    head, btn_report = _columns([6, 1.8])
+    head, btn_report = _columns([6, 1.8], gap="small")
 head.markdown(header_html(), unsafe_allow_html=True)
 render_report_button(btn_report)
 if is_admin():
@@ -935,3 +1132,5 @@ cols = st.columns(per_row)
 for i, entry in enumerate(reversed(st.session_state.entries)):  # newest first
     with cols[i % per_row]:
         render_card(entry)
+
+install_hover_tips()

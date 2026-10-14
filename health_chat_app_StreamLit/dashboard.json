@@ -26,5 +26,19 @@
     "source": "LLM",
     "note": "",
     "created": null
+  },
+  {
+    "id": "6922df1c",
+    "prompt": "show me the number of new HIV infections ",
+    "title": "Number of new HIV infections",
+    "sql": "SELECT\n    TRY_CAST(STARTYEAR AS INT) AS [year],\n    CAST(Numeric AS FLOAT) AS [value],\n    [DIMENSION_CODE] AS [series]\nFROM health_indicators\nWHERE GHO_CODE = 'HIV_0000000026'\n  AND Numeric IS NOT NULL\n  AND TRY_CAST(STARTYEAR AS INT) IS NOT NULL\nORDER BY [year] ASC, [series] ASC;",
+    "original_sql": "SELECT\n    TRY_CAST(STARTYEAR AS INT) AS [year],\n    CAST(Numeric AS FLOAT) AS [value],\n    [DIMENSION_CODE] AS [series]\nFROM health_indicators\nWHERE GHO_CODE = 'HIV_0000000026'\n  AND Numeric IS NOT NULL\n  AND TRY_CAST(STARTYEAR AS INT) IS NOT NULL\nORDER BY [year] ASC, [series] ASC;",
+    "code": "HIV_0000000026",
+    "label": "Number of new HIV infections",
+    "kind": "trend",
+    "chart_type": "line",
+    "source": "AI (qwen-8k:latest)",
+    "note": "",
+    "created": "2026-10-14 17:48"
   }
 ]
