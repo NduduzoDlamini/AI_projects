@@ -27,6 +27,43 @@ def unit_parts(unit: str):
     return False, unit
 
 
+# ---- which way is "healthier"? Most indicators here are a burden (cases, deaths, rates): LOWER is better.
+# These are the exceptions. Edit the two sets to change a colour; any code not in the catalog stays grey.
+HIGHER_IS_BETTER = {
+    # coverage, screening and treatment success
+    "HIV_ARTCOVERAGE", "TB_c_new_tsr", "NCD_DIABETES_TREATMENT_AGESTD", "NCD_CXCA_SCREENED_WITHIN_TIMEPERIOD",
+    "WHS8_110", "VACCINECOVERAGE_DTP1", "WHS4_543", "VACCINECOVERAGE_IPV1", "WHS4_154", "MDG_0000000025",
+    "NUT_BF_EBF", "UHC_INDEX_REPORTED",
+    # life expectancy, spending and the health workforce / services
+    "WHOSIS_000001", "WHOSIS_000002", "GHED_CHEGDP_SHA2011", "GHED_CHE_pc_US_SHA2011",
+    "HWF_0001", "HWF_0006", "HWF_0010", "WHS6_102",
+    # water, sanitation and clean cooking
+    "WSH_WATER_BASIC", "WSH_SANITATION_BASIC", "WSH_HYGIENE_BASIC", "PHE_HHAIR_PROP_POP_CLEAN_FUELS",
+}
+# Neither direction is clearly good (more notified TB cases can mean better detection, people living with HIV
+# rises when treatment keeps people alive, caesarean births have a healthy middle range).
+NO_CLEAR_DIRECTION = {"TB_c_newinc", "HIV_0000000001", "WHS4_115"}
+
+
+def good_direction(code: str):
+    """'lower', 'higher', or None when there is no clear good direction (or the indicator is not in the catalog)."""
+    if code in NO_CLEAR_DIRECTION:
+        return None
+    if code in HIGHER_IS_BETTER:
+        return "higher"
+    return "lower" if any(c == code for _, c, _ in catalog.CATALOG) else None
+
+
+def change_tone(code: str, diff: float) -> str:
+    """good (green) / bad (red) / neutral (grey, no clear good direction) / flat (no change)."""
+    if diff == 0:
+        return "flat"
+    wanted = good_direction(code)
+    if wanted is None:
+        return "neutral"
+    return "good" if (diff < 0) == (wanted == "lower") else "bad"
+
+
 def compute_kpi(view, code: str, label: str = ""):
     """Everything the KPI block needs, in plain words, for the rows currently shown.
 
@@ -58,7 +95,7 @@ def compute_kpi(view, code: str, label: str = ""):
         head = f"{name} · latest ({last_y})"
 
     out = {"head": head, "value_text": num(main), "unit_text": unit_note if percent else unit,
-           "delta_text": None, "direction": None, "delta_tip": "", "basis": ""}
+           "delta_text": None, "direction": None, "tone": None, "delta_tip": "", "basis": ""}
     if len(yearly) >= 2:
         diff = last_v - first_v
         if first_v != 0:
@@ -66,6 +103,7 @@ def compute_kpi(view, code: str, label: str = ""):
         else:
             pct = "n/a" if diff else "0.0%"
         amount = fmt_num(diff, signed=True, whole=whole) + (" pp" if percent else "")
+        out["tone"] = change_tone(code, diff)
         if diff == 0:
             out["direction"], out["delta_text"] = "flat", f"● no change since {first_y}"
         else:
@@ -73,7 +111,9 @@ def compute_kpi(view, code: str, label: str = ""):
             out["delta_text"] = f"{'▲' if diff > 0 else '▼'} {amount} ({pct}) since {first_y}"
         out["delta_tip"] = (f"Change in the yearly figure from {first_y} to {last_y}. "
                             f"{'pp = percentage points. ' if percent else ''}"
-                            f"The percentage in brackets is relative to the {first_y} value.")
+                            f"The percentage in brackets is relative to the {first_y} value. "
+                            "Green = moving in the healthier direction, red = the wrong way, "
+                            "grey = no clear good or bad direction for this indicator.")
         if is_count:
             out["basis"] = f"Total of all years shown. Change compares the yearly figure: {num(first_v)} in {first_y}, {num(last_v)} in {last_y}."
         else:
@@ -89,7 +129,7 @@ def kpi_html(k: dict, code: str, label: str, extra: str = "") -> str:
              f'<div class="kpi-value">{e(k["value_text"])}'
              + (f'<span class="kpi-unit">{e(k["unit_text"])}</span>' if k["unit_text"] else "") + "</div>"]
     if k["delta_text"]:
-        parts.append(f'<div class="kpi-delta {k["direction"]}" title="{e(k["delta_tip"])}">{e(k["delta_text"])}</div>')
+        parts.append(f'<div class="kpi-delta {k.get("tone") or k["direction"]}" title="{e(k["delta_tip"])}">{e(k["delta_text"])}</div>')
     else:
         parts.append('<div class="kpi-basis">Only one year in this range, so no change is shown.</div>')
     if k["basis"]:

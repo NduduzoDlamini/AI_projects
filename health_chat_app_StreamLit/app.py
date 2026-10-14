@@ -221,8 +221,9 @@ SIDEBAR_CSS = """
 .kpi-unit { font-size: 0.8rem; font-weight: 400; opacity: 0.75; margin-left: 0.45rem; }
 .kpi-delta { display: inline-block; font-size: 0.8rem; padding: 0.1rem 0.65rem; border-radius: 1rem; margin: 0.1rem 0; }
 .kpi-delta { color: #ffffff; font-weight: 600; }
-.kpi-delta.up { background: #188038; }
-.kpi-delta.down { background: #d93025; }
+.kpi-delta.good { background: #188038; }      /* moving in the healthier direction */
+.kpi-delta.bad { background: #d93025; }       /* moving the wrong way */
+.kpi-delta.neutral { background: #475569; }   /* no clear good or bad direction */
 .kpi-delta.flat { background: #6b7280; }
 .kpi-basis { font-size: 0.75rem; opacity: 0.7; line-height: 1.3; }
 .card-title { font-weight: 600; font-size: 0.95rem; line-height: 1.25; padding-top: 0.25rem; }
