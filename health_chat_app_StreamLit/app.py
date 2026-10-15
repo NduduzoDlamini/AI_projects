@@ -10,6 +10,7 @@ import os
 import logging
 import re
 import sqlite3
+import textwrap
 import threading
 import time
 import uuid
@@ -60,7 +61,10 @@ def _secret(name: str):
 
 
 DEFAULT_START_YEAR = 2010   # the year range starts here by default
-CHART_HEIGHT = 210   # compact charts so the dashboard fits one window
+CHART_HEIGHT = 235   # compact charts so the dashboard fits one window
+AXIS_TITLE_SIZE = 13   # font size of the axis titles ("Year", the measure on the y-axis)
+X_TITLE_GAP = 16       # space (px) between the year numbers and the word "Year"
+Y_TITLE_GAP = 8        # space (px) between the y-axis numbers and the y-axis title
 ONLINE_AI_CALLS_PER_SESSION = 25   # protects your API quota on a public app
 PERSIST = not IS_CLOUD   # local only: remembers Appearance and writes sql_log.sql next to the app
 MAX_CHARTS = 60          # the dashboard is shared, so cap how many charts it can hold
@@ -387,6 +391,18 @@ def _reset_chart_types():
         st.session_state["_types"] = {eid: new for eid in trend_ids}
 
 
+def _reset_grid():
+    """Sidebar 'Show horizontal lines' applies to EVERY chart. Admin: saved for the shared dashboard. User: this visitor only."""
+    new = bool(st.session_state.get("grid_all"))
+    trend_ids = [e["id"] for e in st.session_state.get("entries", []) if e.get("kind") == "trend"]
+    for eid in trend_ids:
+        st.session_state[f"grid_{eid}"] = new
+    if is_admin():
+        _store_update(lambda items: [({**it, "show_grid": None} if it.get("kind") == "trend" else it) for it in items])
+    else:
+        st.session_state["_grid"] = {eid: new for eid in trend_ids}
+
+
 def _reset_labels():
     """Sidebar 'Show data labels' applies to EVERY chart. Admin: saved for the shared dashboard. User: this visitor only."""
     new = bool(st.session_state.get("labels_all"))
@@ -453,6 +469,10 @@ with top_box:
     show_labels_all = st.checkbox("Show data labels", key="labels_all", on_change=_reset_labels,
                                   help="Writes the value on every point or bar. Applies to every chart; a chart's own "
                                        "⚙ button can override it until you change this again.")
+    show_grid_all = st.checkbox("Show horizontal lines", value=True, key="grid_all", on_change=_reset_grid,
+                                help="The light horizontal lines behind the chart that help you read the values. "
+                                     "Applies to every chart; a chart's own ⚙ button can override it until you "
+                                     "change this again.")
     per_row = st.selectbox("Charts per row", [1, 2, 3, 4], index=2,
                            help="More charts per row fits more on one screen. Zoom the page in for a larger view.")
     st.radio("Appearance", ["Auto", "Light", "Dark"], key="appearance", horizontal=True,
@@ -475,7 +495,7 @@ CFG = {
     "api_base": api_base, "api_model": api_model, "api_key": api_key,
     "series_col": series_col, "dim_value": dim_value, "conn_str": conn_str,
     "default_chart": chart_pick.lower(), "source": source, "dialect": dialect,
-    "show_labels": bool(show_labels_all),
+    "show_labels": bool(show_labels_all), "show_grid": bool(show_grid_all),
 }
 
 
@@ -510,7 +530,7 @@ def run_query(sql: str) -> pd.DataFrame:
 
 # ---- the dashboard is SHARED by every visitor and saved in dashboard.json, so charts survive a reload.
 STORE_KEYS = ("id", "prompt", "title", "sql", "original_sql", "code", "label", "kind", "chart_type",
-              "source", "note", "created", "show_labels")
+              "source", "note", "created", "show_labels", "show_grid")
 
 
 @st.cache_resource
@@ -684,6 +704,17 @@ def set_card_type(eid: str):
         st.session_state.setdefault("_types", {})[eid] = chosen
 
 
+def set_card_grid(eid: str):
+    """Admin: saved for everyone. User: only changes what this visitor sees."""
+    if not _find(eid):
+        return
+    chosen = bool(st.session_state.get(f"grid_{eid}"))
+    if is_admin():
+        _store_patch(eid, show_grid=chosen)
+    else:
+        st.session_state.setdefault("_grid", {})[eid] = chosen
+
+
 def set_card_labels(eid: str):
     """Admin: saved for everyone. User: only changes what this visitor sees."""
     if not _find(eid):
@@ -819,7 +850,16 @@ def render_report():
 split_label = helpers.split_label
 
 
-def make_figure(df: pd.DataFrame, ctype: str, label: str = "", show_labels: bool = False):
+def _wrap_title(text: str, width: int = 26, max_lines: int = 3) -> str:
+    """Wrap a long axis title onto several lines so the larger text is not cut off (Plotly does not wrap)."""
+    lines = textwrap.wrap(html.escape(text or "", quote=False), width=width) or [""]
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = lines[-1].rstrip(" ,;:(") + "…"
+    return "<br>".join(lines)
+
+
+def make_figure(df: pd.DataFrame, ctype: str, label: str = "", show_labels: bool = False, show_grid: bool = True):
     d = df.copy()
     multi = False
     if "series" in d.columns:
@@ -849,8 +889,11 @@ def make_figure(df: pd.DataFrame, ctype: str, label: str = "", show_labels: bool
 
     y_title = (unit[:1].upper() + unit[1:]) if unit else (name or "Value")
     fig.update_layout(**compact)
-    fig.update_xaxes(title_text=None, tickformat="d")
-    fig.update_yaxes(title_text=y_title, title_font=dict(size=10))
+    # automargin lets the margin grow, which is what makes the standoff (gap to the numbers) actually apply
+    fig.update_xaxes(title_text="Year", title_font=dict(size=AXIS_TITLE_SIZE), title_standoff=X_TITLE_GAP,
+                     automargin=True, tickformat="d")   # x is always the year
+    fig.update_yaxes(title_text=_wrap_title(y_title), title_font=dict(size=AXIS_TITLE_SIZE), title_standoff=Y_TITLE_GAP,
+                     automargin=True, showgrid=bool(show_grid))   # showgrid = the horizontal lines
     fig.update_traces(hovertemplate=("%{fullData.name}<br>" if multi else "")
                       + "Year %{x}<br>%{y:,.2f}" + (f" {unit}" if unit else "") + "<extra></extra>")
     if show_labels:
@@ -978,8 +1021,8 @@ _HOVER_TIPS_HTML = """
 def install_hover_tips():
     """Hover tips for the gear and AI report buttons. They use the browser's own tip, so they show only while the
     pointer is on that button and go away when it leaves or the settings open (Streamlit's own tip can get stuck)."""
-    tips = {"gear": "Chart type, data labels, rename, SQL, remove" if is_admin()
-                    else "Chart type, data labels (and rename, for charts you made)",
+    tips = {"gear": "Chart type, data labels, horizontal lines, rename, SQL, remove" if is_admin()
+                    else "Chart type, data labels, horizontal lines (and rename, for charts you made)",
             "report": "Write a short report from the charts on the dashboard"}
     try:
         components.html(_HOVER_TIPS_HTML % json.dumps(tips), height=0)
@@ -1011,6 +1054,15 @@ def render_card(e: dict):
         show = CFG["show_labels"]
     show = bool(show)
     st.session_state[f"labels_{e['id']}"] = show
+    # horizontal lines: same order of choice (this visitor's own, the chart's saved choice, the sidebar's)
+    mine_g = {} if is_admin() else st.session_state.get("_grid", {})
+    grid = mine_g.get(e["id"])
+    if grid is None:
+        grid = e.get("show_grid")
+    if grid is None:
+        grid = CFG["show_grid"]
+    grid = bool(grid)
+    st.session_state[f"grid_{e['id']}"] = grid
     with st.container(border=True):
         c_title, c_opt = _columns([6, 1.4])
         c_title.markdown(f'<div class="card-title">{html.escape(title)}</div>', unsafe_allow_html=True)
@@ -1024,6 +1076,8 @@ def render_card(e: dict):
                                  key=f"type_{e['id']}", on_change=set_card_type, args=(e["id"],))
             if ctype != "table" and e.get("kind") != "discovery":
                 st.checkbox("Show data labels", key=f"labels_{e['id']}", on_change=set_card_labels, args=(e["id"],))
+            if ctype not in ("table", "pie") and e.get("kind") != "discovery":
+                st.checkbox("Show horizontal lines", key=f"grid_{e['id']}", on_change=set_card_grid, args=(e["id"],))
             if can_rename(e["id"]):
                 st.text_input("Title", value=title, key=f"title_{e['id']}", max_chars=150,
                               on_change=rename_entry, args=(e["id"],))
@@ -1065,7 +1119,7 @@ def render_card(e: dict):
                 if ctype == "table":
                     st.dataframe(view, height=CHART_HEIGHT)
                 else:
-                    st.plotly_chart(make_figure(view, ctype, e.get("label", ""), show), key=f"fig_{e['id']}")
+                    st.plotly_chart(make_figure(view, ctype, e.get("label", ""), show, grid), key=f"fig_{e['id']}")
                 excel_button(e, title, view,
                              f"{e.get('label', '')} ({e['code']}) · years {year_lo}-{year_hi}".strip(), full=df)
 
