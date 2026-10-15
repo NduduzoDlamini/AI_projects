@@ -164,8 +164,10 @@ def build_sql_log(entries, project: str, database: str) -> str:
     return "\n".join(out) + "\n"
 
 
+# Only pictures and the green/red change badges are flipped back. A <canvas> is NOT flipped back: Streamlit draws
+# tables (st.dataframe) on a canvas in the theme's own colours, so it has to be flipped together with the page.
 _FLIP = ("html { filter: invert(1) hue-rotate(180deg); } "
-         "img, video, canvas, .kpi-delta { filter: invert(1) hue-rotate(180deg); }")
+         "img, video, .kpi-delta { filter: invert(1) hue-rotate(180deg); }")
 
 
 def appearance_css(choice: str, actual=None) -> str:
