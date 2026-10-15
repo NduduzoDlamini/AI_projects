@@ -390,7 +390,7 @@ def attach_comparison(facts, question: str):
         f["compare"] = text
 
 
-def report_prompt(facts, focus: str, year_lo: int, year_hi: int) -> str:
+def report_prompt(facts, focus: str, year_lo: int, year_hi: int, notes=None) -> str:
     question = " ".join((focus or "").split())[:300]
     if question:
         head = [
@@ -423,7 +423,125 @@ def report_prompt(facts, focus: str, year_lo: int, year_hi: int) -> str:
             "",
             "Keep it under 500 words. Do not give medical advice.",
         ]
+    if notes:
+        head += ["", "BACKGROUND NOTES written by the dashboard owner (trusted: use them for definitions and context, "
+                     "but the DATA below is the only source of numbers):", *[f"- {n}" for n in notes]]
     return "\n".join(head + ["", "DATA:", _facts_text(facts)])
+
+
+# ---------------------------------------------------------------------------
+# FAQ: questions the admin has answered. A matching visitor question gets the admin's chart and/or answer.
+# ---------------------------------------------------------------------------
+FAQ_THRESHOLD = 0.6     # how alike two questions must be (0 to 1) to count as the same question
+_FAQ_FILLER = set("""which who why when where can could would should will can the a an of in on for to from and or with by
+me my our us you your it its this that these those there their please show give display plot draw make create get see
+tell about many much number count total""".split())
+
+
+def faq_tokens(text: str) -> set:
+    """The meaningful words of a question: no filler words, no numbers or years, plural/singular treated the same."""
+    words = re.findall(r"[a-z]+", (text or "").lower())
+    skip = _Q_FILLER | _FAQ_FILLER | catalog.STOPWORDS
+    return {_stem(w) for w in words if len(w) > 1 and w not in skip}
+
+
+def faq_phrasings(entry: dict):
+    return [entry.get("question", "")] + [ln for ln in (entry.get("also") or "").splitlines() if ln.strip()]
+
+
+def faq_score(prompt: str, entry: dict) -> float:
+    """0 to 1: how much the visitor's words overlap one of the FAQ's phrasings (needs 2+ shared words)."""
+    a = faq_tokens(prompt)
+    best = 0.0
+    for phrasing in faq_phrasings(entry):
+        b = faq_tokens(phrasing)
+        shared = len(a & b)
+        if not shared or (shared < 2 and not (len(a) == 1 and len(b) == 1)):
+            continue
+        best = max(best, shared / len(a | b))
+    return best
+
+
+def faq_match(prompt: str, faqs, threshold: float = FAQ_THRESHOLD):
+    """(best FAQ entry or None, its score). The score is returned even when it is below the threshold."""
+    best, best_score = None, 0.0
+    for entry in faqs or []:
+        sc = faq_score(prompt, entry)
+        if sc > best_score:
+            best, best_score = entry, sc
+    return (best if best_score >= threshold else None), best_score
+
+
+_CHART_WORDS = set("""trend trends graph graphs chart charts plot draw show display line bar pie area scatter table
+visualize visualise histogram""".split())
+
+
+def wants_chart(prompt: str) -> bool:
+    """True if the visitor asked for a chart/trend (chart words or years), not just 'what is ...?'."""
+    return bool(set(re.findall(r"[a-z]+", (prompt or "").lower())) & _CHART_WORDS
+                or re.search(r"(?<!\d)(?:19|20)\d{2}(?!\d)", prompt or ""))
+
+
+def faq_examples(faqs, limit: int = 15):
+    """Question -> indicator pairs, given to the AI as examples of correct answers."""
+    return [f'"{f["question"]}" -> {f["code"]}' for f in (faqs or []) if f.get("code")][:limit]
+
+
+def faq_notes(prompt: str, faqs, limit: int = 3, min_score: float = 0.25):
+    """The most related FAQ answers, given to the AI report as background notes."""
+    scored = sorted(((faq_score(prompt, f), f) for f in (faqs or []) if f.get("answer")), key=lambda t: -t[0])
+    return [f"{f['question']} -> {' '.join(f['answer'].split())[:600]}" for sc, f in scored[:limit] if sc >= min_score]
+
+
+def faq_clean(question: str, also: str, code: str, chart_type: str, years: str, answer: str, valid_codes):
+    """Check what the admin typed. Returns (entry, None) or (None, message)."""
+    question = " ".join((question or "").split())[:200]
+    if len(question) < 5:
+        return None, "Type the question first (a few words at least)."
+    also_lines = [" ".join(ln.split())[:200] for ln in (also or "").splitlines() if ln.strip()][:10]
+    code = code if code in valid_codes else ""
+    chart_type = chart_type if chart_type in catalog.CHART_TYPES else ""
+    years = " ".join((years or "").split())[:20]
+    if years and catalog.year_bounds(years) == (None, None):
+        return None, "Years should look like 2010-2024, or a single year such as 2015."
+    answer = (answer or "").strip()[:1500]
+    if not code and not answer:
+        return None, "Choose an indicator to chart, write an answer, or both."
+    return {"question": question, "also": "\n".join(also_lines), "code": code, "chart_type": chart_type,
+            "years": years, "answer": answer}, None
+
+
+# ---------------------------------------------------------------------------
+# Unanswered questions: what visitors asked and the dashboard could not answer (the admin trains them into the FAQ)
+# ---------------------------------------------------------------------------
+UNANSWERED_MAX = 200
+
+
+def unanswered_key(question: str) -> str:
+    """Same question asked in a slightly different way -> same key (so it is counted, not listed twice)."""
+    return " ".join(sorted(faq_tokens(question))) or " ".join((question or "").lower().split())
+
+
+def unanswered_record(items, question: str, reason: str, when: str, new_id: str):
+    """Add the question to the log, or raise its count if it is already there. Returns the new list."""
+    question = " ".join((question or "").split())[:300]
+    if not question:
+        return items
+    key = unanswered_key(question)
+    for it in items:
+        if unanswered_key(it.get("question", "")) == key:
+            it["count"] = int(it.get("count", 1)) + 1
+            it["last"] = when
+            it["reason"] = (reason or it.get("reason", ""))[:200]
+            return items
+    items = items + [{"id": new_id, "question": question, "reason": (reason or "")[:200],
+                      "count": 1, "first": when, "last": when}]
+    return items[-UNANSWERED_MAX:]
+
+
+def unanswered_resolve(items, entry: dict):
+    """Drop every logged question that the new FAQ entry now answers."""
+    return [it for it in items if faq_match(it.get("question", ""), [entry])[0] is None]
 
 
 def clean_report(raw: str) -> str:

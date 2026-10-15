@@ -84,9 +84,10 @@ _REQUIRED = {
     "helpers.py": (helpers, ["split_label", "compute_kpi", "kpi_html", "build_sql_log", "appearance_css",
                              "chart_excel_bytes", "safe_filename", "report_facts", "report_prompt",
                              "fallback_report", "clean_report", "report_docx_bytes", "question_years",
-                             "filter_facts_for_question", "attach_comparison"]),
+                             "filter_facts_for_question", "attach_comparison", "faq_match", "faq_clean", "faq_examples",
+                             "faq_notes", "wants_chart", "unanswered_record", "unanswered_resolve"]),
     "catalog.py": (catalog, ["is_count", "CHART_TYPES", "detect_chart_type", "find_indicator"]),
-    "sqlgen.py": (sqlgen, ["generate_sql", "is_safe_select", "call_llm", "adapt_sql", "sql_dialect_of"]),
+    "sqlgen.py": (sqlgen, ["generate_sql", "is_safe_select", "call_llm", "adapt_sql", "sql_dialect_of", "faq_examples_text"]),
 }
 _outdated = {f: [n for n in names if not hasattr(mod, n)] for f, (mod, names) in _REQUIRED.items()}
 _outdated = {f: miss for f, miss in _outdated.items() if miss}
@@ -253,6 +254,7 @@ def sidebar_header_html() -> str:
 top_box = st.sidebar.container()                          # the visible settings (top)
 admin = is_admin()
 adv = st.sidebar.expander("Advanced: data and LLM") if admin else None   # admin only
+faq_box = st.sidebar.expander("FAQ: train the answers") if admin else None   # admin only
 login_box = st.sidebar.container()
 render_admin_login(login_box)
 
@@ -629,6 +631,198 @@ def sync_dashboard():
     ss["entries"], ss["data"], ss["_store_stamp"] = entries, new_data, stamp
 
 
+# ---------------------------------------------------------------- FAQ (questions the admin has answered)
+FAQ_FILE = Path(__file__).with_name("faq.json")
+FAQ_MAX = 100
+FAQ_NO_CODE = "(no chart: answer text only)"
+FAQ_SIDEBAR_TYPE = "(use the sidebar's chart type)"
+CODE_LABELS = {c: label for _, c, label in catalog.CATALOG}
+FAQ_CODE_OPTIONS = [FAQ_NO_CODE] + [f"{c} · {label}" for c, label in CODE_LABELS.items()]
+
+
+def _faq_read() -> list:
+    try:
+        data = json.loads(FAQ_FILE.read_text(encoding="utf-8")) if FAQ_FILE.exists() else []
+    except Exception:
+        log.exception("faq.json is unreadable")
+        return []
+    return [f for f in data if isinstance(f, dict) and f.get("id") and f.get("question")] if isinstance(data, list) else []
+
+
+def _faq_update(change):
+    """ADMIN ONLY. Read-modify-write faq.json safely (one writer at a time)."""
+    if not is_admin():
+        return
+    with _store_lock():
+        items = change(_faq_read())
+        tmp = FAQ_FILE.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, FAQ_FILE)
+
+
+def _faq_add():
+    if not is_admin():
+        return
+    ss = st.session_state
+    choice = ss.get("faq_code", FAQ_NO_CODE)
+    code = "" if choice == FAQ_NO_CODE else choice.split(" · ")[0]
+    ctype = ss.get("faq_type", FAQ_SIDEBAR_TYPE)
+    entry, err = helpers.faq_clean(ss.get("faq_q", ""), ss.get("faq_also", ""), code,
+                                   "" if ctype == FAQ_SIDEBAR_TYPE else ctype, ss.get("faq_years", ""),
+                                   ss.get("faq_answer", ""), set(CODE_LABELS))
+    if err is None and len(_faq_read()) >= FAQ_MAX:
+        err = f"The FAQ is full ({FAQ_MAX} entries). Delete one first."
+    if err:
+        ss["_faq_msg"] = ("error", err)
+        return
+    entry["id"] = uuid.uuid4().hex[:8]
+    _faq_update(lambda items: items + [entry])
+    _unans_update(lambda items: helpers.unanswered_resolve(items, entry))   # the inbox no longer lists what is now answered
+    for key in ("faq_q", "faq_also", "faq_years", "faq_answer"):
+        ss[key] = ""
+    ss["_faq_msg"] = ("ok", "Saved. A visitor asking this now gets this answer.")
+
+
+def _faq_delete(fid: str):
+    _faq_update(lambda items: [f for f in items if f.get("id") != fid])
+
+
+# ---- unanswered questions: logged automatically (any visitor can trigger it), reviewed by the admin only
+UNANS_FILE = HERE / "unanswered.json"
+
+
+def _unans_read() -> list:
+    try:
+        data = json.loads(UNANS_FILE.read_text(encoding="utf-8")) if UNANS_FILE.exists() else []
+    except Exception:
+        log.exception("unanswered.json is unreadable")
+        return []
+    return [u for u in data if isinstance(u, dict) and u.get("id") and u.get("question")] if isinstance(data, list) else []
+
+
+def _unans_update(change):
+    with _store_lock():
+        items = change(_unans_read())
+        tmp = UNANS_FILE.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(items, indent=2, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, UNANS_FILE)
+
+
+def log_unanswered(question: str, reason: str):
+    """Remember a question the dashboard could not answer. Never lets a logging problem break the app."""
+    try:
+        when = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _unans_update(lambda items: helpers.unanswered_record(items, question, reason, when, uuid.uuid4().hex[:8]))
+    except Exception:
+        log.exception("could not log an unanswered question")
+
+
+def _unans_train(uid: str):
+    """ADMIN: copy a logged question into the FAQ form, ready to be answered."""
+    if not is_admin():
+        return
+    item = next((u for u in _unans_read() if u["id"] == uid), None)
+    if item:
+        ss = st.session_state
+        ss["faq_q"], ss["faq_also"], ss["faq_years"], ss["faq_answer"] = item["question"], "", "", ""
+        ss["_faq_msg"] = ("info", "Question copied into the form below. Choose an indicator and/or write an answer, "
+                                  "then press Save FAQ.")
+
+
+def _unans_dismiss(uid: str):
+    if is_admin():
+        _unans_update(lambda items: [u for u in items if u["id"] != uid])
+
+
+def _unans_clear():
+    if is_admin():
+        _unans_update(lambda items: [])
+
+
+def ask_faq(question: str):
+    st.session_state["_ask"] = question        # handled like a typed question on the next run
+
+
+def render_faq_button(holder):
+    """Visitors: a list of the common questions; one click asks it."""
+    faqs = _faq_read()
+    if not faqs:
+        return
+    pop = holder.popover("❓ FAQ") if hasattr(holder, "popover") else holder.expander("❓ FAQ")
+    with pop:
+        st.caption("Click a question to add its chart or answer to the dashboard.")
+        for f in faqs[:30]:
+            st.button(f["question"], key=f"faq_ask_{f['id']}", on_click=ask_faq, args=(f["question"],),
+                      use_container_width=True)
+
+
+def render_faq_answer():
+    fa = st.session_state.get("_faq_answer")
+    if not fa:
+        return
+    with st.container(border=True):
+        st.markdown(f"**{fa['q']}**")
+        st.markdown(fa["a"])
+        st.button("Hide", key="faq_hide", on_click=lambda: st.session_state.pop("_faq_answer", None))
+
+
+def render_faq_admin():
+    st.caption("Teach the dashboard how to answer common questions. A visitor's question that matches one of these "
+               "gets your chart and/or answer. The AI model itself is not retrained: these entries decide the match "
+               "and are also given to the AI as examples and background notes.")
+    kind_msg = st.session_state.pop("_faq_msg", None)
+    if kind_msg:
+        {"ok": st.success, "info": st.info}.get(kind_msg[0], st.error)(kind_msg[1])
+    pending = sorted(_unans_read(), key=lambda u: (-int(u.get("count", 1)), u.get("last", "")), reverse=False)
+    st.markdown(f"**📥 Unanswered questions ({len(pending)})**")
+    if not pending:
+        st.caption("Nothing here. Questions the dashboard cannot answer will be listed here automatically.")
+    else:
+        st.caption("Questions visitors asked that had no match or no data. Press 🎓 to copy one into the form "
+                   "below and teach the answer; it disappears from this list once the FAQ answers it.")
+        for u in pending[:50]:
+            c1, c2, c3 = st.columns([6, 1, 1])
+            times = f" · asked {u['count']}×" if int(u.get("count", 1)) > 1 else ""
+            c1.markdown(f"{html.escape(u['question'])}")
+            c1.caption(f"{u.get('reason', '')}{times} · last {u.get('last', '')}")
+            c2.button("🎓", key=f"utrain_{u['id']}", on_click=_unans_train, args=(u["id"],), help="Train: copy into the FAQ form")
+            c3.button("🗑", key=f"udel_{u['id']}", on_click=_unans_dismiss, args=(u["id"],), help="Dismiss this question")
+        if len(pending) > 50:
+            st.caption(f"Showing the 50 most asked of {len(pending)}.")
+        st.button("Clear unanswered list", key="unans_clear", on_click=_unans_clear)
+        st.download_button("Download unanswered.json", data=json.dumps(pending, indent=2, ensure_ascii=False),
+                           file_name="unanswered.json", mime="application/json", key="unans_backup")
+    st.divider()
+    with st.form("faq_form"):
+        st.text_input("Question", key="faq_q", placeholder="e.g. How many new HIV infections are there?")
+        st.text_area("Also asked as (one per line)", key="faq_also", height=80,
+                     placeholder="HIV incidence in Eswatini\nnew cases of HIV")
+        st.selectbox("Chart this indicator", FAQ_CODE_OPTIONS, key="faq_code")
+        st.selectbox("Chart type", [FAQ_SIDEBAR_TYPE] + catalog.CHART_TYPES, key="faq_type")
+        st.text_input("Years (optional)", key="faq_years", placeholder="2010-2024")
+        st.text_area("Answer shown to the visitor (optional)", key="faq_answer", height=100)
+        st.form_submit_button("Save FAQ", on_click=_faq_add)
+    faqs = _faq_read()
+    st.markdown(f"**Saved ({len(faqs)})**")
+    for f in faqs:
+        c1, c2 = st.columns([5, 1])
+        c1.caption(f["question"] + (f"  →  {f['code']}" if f.get("code") else "  →  answer only"))
+        c2.button("🗑", key=f"faqdel_{f['id']}", on_click=_faq_delete, args=(f["id"],), help="Delete this FAQ")
+    st.text_input("Test a question", key="faq_test", placeholder="type a question to see what it matches")
+    test = st.session_state.get("faq_test", "").strip()
+    if test:
+        hit, score = helpers.faq_match(test, faqs)
+        if hit:
+            st.success(f"Matches: {hit['question']} (score {score:.2f})")
+        else:
+            st.info(f"No FAQ match (best score {score:.2f}, needs {helpers.FAQ_THRESHOLD}). "
+                    "It would go to the normal indicator search.")
+    st.download_button("Download faq.json", data=json.dumps(faqs, indent=2, ensure_ascii=False),
+                       file_name="faq.json", mime="application/json", key="faq_backup")
+    st.caption("faq.json is saved on the server. On Streamlit Community Cloud it is reset when the app is rebooted or "
+               "redeployed: download it and commit it to GitHub next to app.py to keep it.")
+
+
 def _ai_budget():
     """Copy of the settings with the online-AI cap applied: returns (cfg, capped)."""
     cfg, capped = dict(CFG), False
@@ -640,15 +834,25 @@ def _ai_budget():
     return cfg, capped
 
 
-def add_chart(prompt: str):
+def add_chart(prompt: str, faq=None):
+    """faq = the FAQ entry that matched this question (or None): its indicator, chart type and years are used."""
     if len(st.session_state.entries) >= MAX_CHARTS:
         raise ValueError(f"The dashboard already has {MAX_CHARTS} charts. Please ask the admin to remove some.")
     cfg, capped = _ai_budget()
-    gen = sqlgen.generate_sql(prompt, cfg)
+    cfg["faq_examples"] = helpers.faq_examples(_faq_read())          # examples for the AI when it has to guess
+    forced = ({"code": faq["code"], "label": CODE_LABELS.get(faq["code"]), "chart_type": faq.get("chart_type"),
+               "years": faq.get("years")} if faq and faq.get("code") else None)
+    gen = sqlgen.generate_sql(prompt, cfg, forced)
+    if forced:
+        gen["note"] = (f"Matched FAQ: {faq['question']}. " + gen.get("note", "")).strip()
     if capped:
         gen["note"] = (gen.get("note", "") + " AI limit for this session reached; the built-in template was used.").strip()
     df = run_query(gen["sql"])
-    entry = {"id": uuid.uuid4().hex[:8], "prompt": prompt, "title": prompt,
+    if gen.get("kind") == "discovery":
+        log_unanswered(prompt, "No indicator matched the question")
+    elif df is None or df.empty:
+        log_unanswered(prompt, f"Indicator {gen.get('code', '')} returned no data")
+    entry = {"id": uuid.uuid4().hex[:8], "prompt": prompt, "title": faq["question"] if forced else prompt,
              "original_sql": gen["sql"], "created": datetime.now().strftime("%Y-%m-%d %H:%M"), **gen}
     item = {k: entry.get(k) for k in STORE_KEYS}
     st.session_state.data[entry["id"]] = df                        # keep the result: no second query
@@ -783,6 +987,7 @@ def generate_report(question: str):
         return
     facts, found = helpers.filter_facts_for_question(facts, question)    # only charts about the question
     if not found:
+        log_unanswered(question, "Report question: no chart on the dashboard about this topic")
         st.warning(f"None of the charts on the dashboard are about \"{question}\". Ask for a chart on that topic "
                    "first (for example 'HIV new infections 2010-2024'), then ask your question again.")
         return
@@ -795,7 +1000,8 @@ def generate_report(question: str):
         try:
             with st.spinner("The AI is writing your report..."):
                 raw = sqlgen.call_llm(cfg, helpers.REPORT_SYSTEM,
-                                      helpers.report_prompt(facts, question, lo, hi), timeout=180)
+                                      helpers.report_prompt(facts, question, lo, hi, helpers.faq_notes(question, _faq_read())),
+                                      timeout=180)
             text = helpers.clean_report(raw)
             by = f"AI ({sqlgen.llm_name(cfg)})"
         except Exception as exc:
@@ -1145,6 +1351,10 @@ if is_admin():   # back-up button lives in the same Advanced section
         st.download_button("Download dashboard.json", data=json.dumps(_store_read(), indent=2),
                            file_name="dashboard.json", mime="application/json", key="dash_backup")
 
+if is_admin():
+    with faq_box:
+        render_faq_admin()
+
 # header buttons: shrink their columns to the button width so they sit close together on the right
 st.markdown("""<style>
 div[data-testid="stHorizontalBlock"]:has(.hdr-row-marker) { gap: 0.5rem !important; }
@@ -1154,10 +1364,11 @@ div[data-testid="stHorizontalBlock"]:has(.hdr-row-marker) > div[data-testid="col
 div[data-testid="stHorizontalBlock"]:has(.hdr-row-marker) > div:first-child { flex: 1 1 0 !important; }
 </style>""", unsafe_allow_html=True)
 if is_admin():
-    head, btn_report, btn_clear, btn_log = _columns([10, 1.5, 1.0, 1.0], gap="small")
+    head, btn_faq, btn_report, btn_clear, btn_log = _columns([10, 1.0, 1.5, 1.0, 1.0], gap="small")
 else:
-    head, btn_report = _columns([6, 1.8], gap="small")
+    head, btn_faq, btn_report = _columns([6, 1.0, 1.8], gap="small")
 head.markdown(header_html(), unsafe_allow_html=True)
+render_faq_button(btn_faq)
 render_report_button(btn_report)
 if is_admin():
     if btn_clear.button("Clear all", disabled=not st.session_state.entries):
@@ -1175,24 +1386,36 @@ if IS_CLOUD and not DB_FILE.exists():
                else "The data is not available right now. Please try again later.")
 
 prompt = st.chat_input("e.g. Show me HIV prevalence 2005-2022 as a bar chart")
+prompt = prompt or st.session_state.pop("_ask", None)        # a question clicked in the FAQ list
 needs_rerun = False
 if prompt:
-    try:
-        with st.spinner("Generating SQL and fetching data..."):
-            years = add_chart(prompt)
-        if years and (years[0] is not None or years[1] is not None):
-            st.session_state["_pending_range"] = years  # moves the sidebar range on the next run
+    # a question the admin has answered in the FAQ gets the admin's chart and/or answer
+    faq_hit = None if catalog.explicit_code(prompt) else helpers.faq_match(prompt, _faq_read())[0]
+    if faq_hit and faq_hit.get("answer"):
+        st.session_state["_faq_answer"] = {"q": faq_hit["question"], "a": faq_hit["answer"]}
+    wants = bool(faq_hit and faq_hit.get("code")) or not faq_hit or helpers.wants_chart(prompt)
+    if faq_hit and not wants:           # a plain question with a written answer: no chart needed
         needs_rerun = True
-    except Exception as exc:
-        log.exception("could not build a chart for prompt %r", prompt)
-        if is_admin() or isinstance(exc, ValueError):   # ValueError = a friendly message from sqlgen
-            st.error(f"Could not build that chart: {exc}")
-        else:   # database errors can contain the SQL text, so users only get a generic message
-            st.error("Could not build that chart right now. Try rephrasing, e.g. 'malaria trends 2010-2024'.")
+    else:
+        try:
+            with st.spinner("Generating SQL and fetching data..."):
+                years = add_chart(prompt, faq_hit if faq_hit and faq_hit.get("code") else None)
+            if years and (years[0] is not None or years[1] is not None):
+                st.session_state["_pending_range"] = years  # moves the sidebar range on the next run
+            needs_rerun = True
+        except Exception as exc:
+            log.exception("could not build a chart for prompt %r", prompt)
+            if not str(exc).startswith("The dashboard already has"):
+                log_unanswered(prompt, str(exc)[:150] if isinstance(exc, ValueError) else "Error while building the chart")
+            if is_admin() or isinstance(exc, ValueError):   # ValueError = a friendly message from sqlgen
+                st.error(f"Could not build that chart: {exc}")
+            else:   # database errors can contain the SQL text, so users only get a generic message
+                st.error("Could not build that chart right now. Try rephrasing, e.g. 'malaria trends 2010-2024'.")
 if needs_rerun:
     st.rerun()
 
 render_report()
+render_faq_answer()
 
 if not st.session_state.entries:
     st.info("No charts yet. Type a question below to create your first one.")

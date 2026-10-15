@@ -248,12 +248,22 @@ def _why(exc: Exception) -> str:
     return f"HTTP {status}" if status else exc.__class__.__name__
 
 
+def faq_examples_text(examples) -> str:
+    """Examples of correct answers written by the dashboard owner (the FAQ), added to the AI's request."""
+    ex = [e for e in (examples or []) if e][:15]
+    if not ex:
+        return ""
+    return ("\nEXAMPLES of correct answers (written by the dashboard owner; follow them for similar questions):\n"
+            + "\n".join(ex) + "\n")
+
+
 def pick_indicator_with_llm(prompt: str, cfg: dict):
     """Used only when no keyword matched: let the AI choose from the fixed catalog (its answer is validated)."""
     lines = "\n".join(f"{code} | {label}" for _, code, label in catalog.CATALOG)
     system = ("You map a health question to ONE indicator code from a fixed list. "
               'Reply with JSON only, like {"code": "CODE"}, or {"code": null} if nothing in the list fits.')
-    raw = call_llm(cfg, system, f"INDICATORS (code | meaning):\n{lines}\n\nQUESTION: {prompt}")
+    raw = call_llm(cfg, system, f"INDICATORS (code | meaning):\n{lines}\n"
+                                f"{faq_examples_text(cfg.get('faq_examples'))}\nQUESTION: {prompt}")
     m = re.search(r"\{.*?\}", raw, re.S)
     code = json.loads(m.group(0)).get("code") if m else None
     for _, c, label in catalog.CATALOG:
@@ -265,13 +275,21 @@ def pick_indicator_with_llm(prompt: str, cfg: dict):
 # --------------------------------------------------------------------------
 # Main entry
 # --------------------------------------------------------------------------
-def generate_sql(prompt: str, cfg: dict) -> dict:
-    """Return {'kind','sql','code','label','source','note','chart_type'}."""
+def generate_sql(prompt: str, cfg: dict, forced=None) -> dict:
+    """Return {'kind','sql','code','label','source','note','chart_type'}.
+
+    forced = a matching FAQ ({'code','label','chart_type','years'}): its indicator is used instead of guessing.
+    """
+    forced = forced if forced and forced.get("code") else None
     chart_type = catalog.detect_chart_type(prompt, None)  # None = follow the sidebar chart type
+    if chart_type is None and forced:
+        chart_type = forced.get("chart_type") or None
 
     code = catalog.explicit_code(prompt)
     ai_note = ""
-    if code:
+    if forced:
+        ind = {"code": forced["code"], "label": forced.get("label") or f"Indicator {forced['code']}"}
+    elif code:
         ind = {"code": code, "label": f"Indicator {code}"}
     else:
         ind = catalog.find_indicator(prompt)
@@ -300,6 +318,8 @@ def generate_sql(prompt: str, cfg: dict) -> dict:
     # Years named in the prompt move the sidebar range (the app does that). The SQL itself always
     # fetches ALL years, so the sidebar range can filter the charts instantly without re-querying.
     prompt_years = catalog.year_bounds(prompt)
+    if forced and forced.get("years") and prompt_years == (None, None):
+        prompt_years = catalog.year_bounds(forced["years"])      # the FAQ's years, unless the prompt names its own
     lo = hi = None
     dialect = cfg.get("dialect") or "sqlserver"
     series_col = _safe_col(cfg.get("series_col"))
