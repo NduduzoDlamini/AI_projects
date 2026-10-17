@@ -113,6 +113,15 @@ def is_admin() -> bool:
     return st.session_state.get("role") == "admin"
 
 
+def password_input(label: str, autocomplete: str = "off", **kwargs):
+    """A password box that tells the browser what it is. Streamlit marks every password box as a NEW password,
+    which makes Chrome and other password managers offer to generate a strong one each time."""
+    try:
+        return st.text_input(label, type="password", autocomplete=autocomplete, **kwargs)
+    except TypeError:      # an older Streamlit without the autocomplete option
+        return st.text_input(label, type="password", **kwargs)
+
+
 def _try_login():
     if is_admin():
         return
@@ -149,7 +158,7 @@ def render_admin_login(box):
             elif st.session_state.get("_login_fails", 0) >= MAX_LOGIN_FAILS:
                 st.error("Too many wrong attempts. Reload the page to try again.")
             else:
-                st.text_input("Password", type="password", key="admin_pw", on_change=_try_login)
+                password_input("Password", "current-password", key="admin_pw", on_change=_try_login)
                 st.button("Log in", key="admin_login", on_click=_try_login)
                 if st.session_state.get("_login_fails", 0):
                     st.error("Wrong password.")
@@ -295,8 +304,8 @@ if admin:
                 api_base = st.text_input("API base URL", api_base)
                 api_model = st.text_input("Model", api_model)
                 if not api_key:
-                    api_key = st.text_input("API key", type="password",
-                                            help="Or set LLM_API_KEY in .streamlit/secrets.toml or as an environment variable.")
+                    api_key = password_input("API key",
+                                             help="Or set LLM_API_KEY in .streamlit/secrets.toml or as an environment variable.")
                 else:
                     st.caption("API key loaded from secrets / environment.")
 
@@ -320,7 +329,7 @@ if admin:
             windows_auth = st.checkbox("Windows authentication", value=windows_auth)
             if not windows_auth:
                 sql_user = st.text_input("User")
-                sql_pwd = st.text_input("Password", type="password")
+                sql_pwd = password_input("Password")
 
 conn_str = ""
 if use_sqlite:
@@ -709,7 +718,10 @@ def _unans_update(change):
 
 
 def log_unanswered(question: str, reason: str):
-    """Remember a question the dashboard could not answer. Never lets a logging problem break the app."""
+    """Remember a question the dashboard could not answer. Never lets a logging problem break the app.
+    The admin's own (test) questions are not logged."""
+    if is_admin():
+        return
     try:
         when = datetime.now().strftime("%Y-%m-%d %H:%M")
         _unans_update(lambda items: helpers.unanswered_record(items, question, reason, when, uuid.uuid4().hex[:8]))
@@ -778,7 +790,8 @@ def render_faq_admin():
     if not pending:
         st.caption("Nothing here. Questions the dashboard cannot answer will be listed here automatically.")
     else:
-        st.caption("Questions visitors asked that had no match or no data. Press 🎓 to copy one into the form "
+        st.caption("Questions visitors asked that had no match or no data (your own questions are not listed). "
+                   "Press 🎓 to copy one into the form "
                    "below and teach the answer; it disappears from this list once the FAQ answers it.")
         for u in pending[:50]:
             c1, c2, c3 = st.columns([6, 1, 1])
@@ -1025,7 +1038,8 @@ def generate_report(question: str):
 def render_report_button(holder):
     pop = holder.popover("📝 AI report") if hasattr(holder, "popover") else holder.expander("📝 AI report")
     with pop:
-        st.caption("Ask a question about the charts, or leave it empty for a general report.")
+        st.caption("Ask a question about the charts, or leave it empty for a general report. If no chart "
+                   "matches, your question (not your name) is saved for the admin.")
         question = st.text_input("Your question (optional)", key="report_focus", max_chars=300,
                                  placeholder="e.g. How was HIV in 2024 compared to 2022?")
         if st.button("Generate report", key="report_go", disabled=not st.session_state.entries):
@@ -1378,7 +1392,9 @@ if is_admin():
                             file_name="sql_log.sql", mime="text/plain", disabled=not st.session_state.entries,
                             help="Download the SQL behind every chart, with each chart's heading")
 st.caption("Ask for a trend and name the chart type, e.g. *NCD trends line graph* or "
-           "*malaria deaths 2010 to 2024 pie chart*. Each question adds a chart; nothing is replaced.")
+           "*malaria deaths 2010 to 2024 pie chart*. Each question adds a chart; nothing is replaced.\n\n"
+           "🔒 If the dashboard cannot answer a question, the question (not your name) is saved so the admin can "
+           "teach it the answer. Please do not type personal details.")
 
 if IS_CLOUD and not DB_FILE.exists():
     st.warning("This online copy cannot reach SQL Server on your PC. Add health_indicators.db to the "
@@ -1405,8 +1421,8 @@ if prompt:
             needs_rerun = True
         except Exception as exc:
             log.exception("could not build a chart for prompt %r", prompt)
-            if not str(exc).startswith("The dashboard already has"):
-                log_unanswered(prompt, str(exc)[:150] if isinstance(exc, ValueError) else "Error while building the chart")
+            if str(exc).startswith("I couldn't find a health topic"):   # a real unanswered question, not a technical failure
+                log_unanswered(prompt, str(exc)[:150])
             if is_admin() or isinstance(exc, ValueError):   # ValueError = a friendly message from sqlgen
                 st.error(f"Could not build that chart: {exc}")
             else:   # database errors can contain the SQL text, so users only get a generic message

@@ -5,3 +5,10 @@ dashboard.json
 sql_log.sql
 ui_prefs.json
 .streamlit/secrets.toml
+
+# visitors' unanswered questions: never commit these
+unanswered.json
+
+# temporary and damaged copies the app can create while saving
+*.json.tmp
+*.json.bad
