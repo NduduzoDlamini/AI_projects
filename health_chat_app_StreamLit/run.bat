@@ -18,7 +18,7 @@ if not defined PY (
 %PY% -c "import streamlit, plotly, pandas, pyodbc, requests, openpyxl, docx" >nul 2>nul
 if errorlevel 1 (
     echo Installing the required packages, first run only...
-    %PY% -m pip install -r requirements.txt
+    %PY% -m pip install -r app\requirements.txt
     if errorlevel 1 (
         echo.
         echo Package installation failed. Check your internet connection and try again.
@@ -30,7 +30,7 @@ if errorlevel 1 (
 echo Starting Eswatini Health Dashboard...
 echo Your browser will open automatically. Close this window to stop the app.
 echo.
-%PY% -m streamlit run app.py
+%PY% -m streamlit run app\app.py
 
 echo.
 echo The app has stopped.

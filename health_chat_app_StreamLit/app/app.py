@@ -26,13 +26,20 @@ import catalog
 import helpers
 import sqlgen
 
-HERE = Path(__file__).resolve().parent
-DASH_FILE = HERE / "dashboard.json"
-LOGO_FILE = HERE / "logo.png"
-AUTHOR_FILE = HERE / "author.jpg"
-DB_FILE = HERE / "health_indicators.db"      # bundled copy of the table, used when deployed online
-SQL_LOG_FILE = HERE / "sql_log.sql"          # one SQL log per project
-PREFS_FILE = HERE / "ui_prefs.json"          # remembers the Appearance choice
+HERE = Path(__file__).resolve().parent       # the app/ folder (app.py, catalog.py, helpers.py, sqlgen.py)
+ROOT = HERE.parent                           # the project folder (run.bat lives here)
+DATA_DIR = ROOT / "data"                     # everything the app saves or reads as data
+ASSETS_DIR = ROOT / "assets"                 # logo and author photo
+try:
+    DATA_DIR.mkdir(exist_ok=True)
+except OSError:
+    pass
+DASH_FILE = DATA_DIR / "dashboard.json"
+LOGO_FILE = ASSETS_DIR / "logo.png"
+AUTHOR_FILE = ASSETS_DIR / "author.jpg"
+DB_FILE = DATA_DIR / "health_indicators.db"  # bundled copy of the table, used when deployed online
+SQL_LOG_FILE = DATA_DIR / "sql_log.sql"      # one SQL log per project
+PREFS_FILE = DATA_DIR / "ui_prefs.json"      # remembers the Appearance choice
 PROJECT_NAME = "Eswatini Health Dashboard"
 AUTHOR_NAME = "Nduduzo Dlamini"
 
@@ -153,7 +160,7 @@ def render_admin_login(box):
                 if IS_CLOUD:
                     st.caption("Admin login is off: ADMIN_PASSWORD is not set in this app's Secrets.")
                 else:
-                    st.caption("Admin login is off. Create the file .streamlit/secrets.toml next to app.py with "
+                    st.caption("Admin login is off. Create the file .streamlit/secrets.toml in the project folder (next to run.bat) with "
                                "the line  ADMIN_PASSWORD = \"your password\"  and restart the app.")
             elif st.session_state.get("_login_fails", 0) >= MAX_LOGIN_FAILS:
                 st.error("Too many wrong attempts. Reload the page to try again.")
@@ -320,7 +327,7 @@ if admin:
             if DB_FILE.exists():
                 st.caption("Using the bundled file health_indicators.db (read-only).")
             else:
-                st.warning("health_indicators.db was not found next to app.py. Run export_data.py on your PC first.")
+                st.warning("health_indicators.db was not found in the data folder. Run export_data.py on your PC first.")
         elif not IS_CLOUD:
             st.markdown("**SQL Server**")
             server = st.text_input("Server", server)
@@ -641,7 +648,7 @@ def sync_dashboard():
 
 
 # ---------------------------------------------------------------- FAQ (questions the admin has answered)
-FAQ_FILE = Path(__file__).with_name("faq.json")
+FAQ_FILE = DATA_DIR / "faq.json"
 FAQ_MAX = 100
 FAQ_NO_CODE = "(no chart: answer text only)"
 FAQ_SIDEBAR_TYPE = "(use the sidebar's chart type)"
@@ -697,7 +704,7 @@ def _faq_delete(fid: str):
 
 
 # ---- unanswered questions: logged automatically (any visitor can trigger it), reviewed by the admin only
-UNANS_FILE = HERE / "unanswered.json"
+UNANS_FILE = DATA_DIR / "unanswered.json"
 
 
 def _unans_read() -> list:
@@ -833,7 +840,7 @@ def render_faq_admin():
     st.download_button("Download faq.json", data=json.dumps(faqs, indent=2, ensure_ascii=False),
                        file_name="faq.json", mime="application/json", key="faq_backup")
     st.caption("faq.json is saved on the server. On Streamlit Community Cloud it is reset when the app is rebooted or "
-               "redeployed: download it and commit it to GitHub next to app.py to keep it.")
+               "redeployed: download it and commit it to GitHub in the data folder to keep it.")
 
 
 def _ai_budget():
