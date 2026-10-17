@@ -1,5 +1,7 @@
 # Eswatini Health Dashboard
 
+**Live app: [i-health-dashboard.streamlit.app](https://i-health-dashboard.streamlit.app)**
+
 A Streamlit app where you **ask for a health trend in plain English** and a chart appears. Each question adds a chart to a shared dashboard, with a headline number, a green/red change badge, Excel downloads and an AI-written report (Word or Markdown).
 
 Example questions:
@@ -8,7 +10,7 @@ Example questions:
 - `malaria deaths 2010 to 2024 pie chart`
 - `Show me HIV prevalence 2005-2022 as a bar chart`
 
-The data is Eswatini health indicators (World Health Organization Global Health Observatory indicator codes).
+The data is Eswatini health indicators (World Health Organization Global Health Observatory indicator codes). See [Data source](#data-source).
 
 ---
 
@@ -34,6 +36,16 @@ The data is Eswatini health indicators (World Health Organization Global Health 
 **Shared dashboard**
 - Charts are saved on the server and shown to every visitor, and they survive a page reload.
 - Visitors can add charts. Only the admin can delete them.
+
+---
+
+## Data source
+
+The numbers come from the **World Health Organization (WHO) data for Eswatini**, published on the Humanitarian Data Exchange (HDX):
+
+[WHO data for Eswatini on HDX](https://data.humdata.org/dataset/who-data-for-swz/resource/4e085174-bbff-4e15-8e23-b1aacaf92cad)
+
+The dataset is loaded into the `health_indicators` table (one row per indicator, year and breakdown). Charts, headline numbers and AI reports are all calculated from it. Please check the licence and terms on the HDX page before reusing the data.
 
 ---
 
@@ -78,38 +90,39 @@ question ──► catalog.py ──► indicator code, years, chart type
 
 | File | Purpose |
 |---|---|
-| `app.py` | The Streamlit app: pages, roles, saving, charts, FAQ, report |
-| `catalog.py` | Indicator catalog and question parsing. **Add new indicators here** |
-| `helpers.py` | KPI numbers, change colours, Excel and Word files, report text, FAQ matching |
-| `sqlgen.py` | Safe SQL generation, the AI call, converting SQL between databases |
-| `export_data.py` | Copies the table from SQL Server into `health_indicators.db` |
-| `health_indicators.db` | The bundled SQLite copy of the data (used online) |
-| `requirements.txt` | Python packages |
+| `run.bat` | Windows launcher script (stays in the main folder) |
+| `README.md` | This file |
+| `app/app.py` | The Streamlit app: pages, roles, saving, charts, FAQ, report |
+| `app/catalog.py` | Indicator catalog and question parsing. **Add new indicators here** |
+| `app/helpers.py` | KPI numbers, change colours, Excel and Word files, report text, FAQ matching |
+| `app/sqlgen.py` | Safe SQL generation, the AI call, converting SQL between databases |
+| `app/requirements.txt` | Python packages |
+| `tools/export_data.py` | Copies the table from SQL Server into `data/health_indicators.db` |
+| `data/health_indicators.db` | The bundled SQLite copy of the data (used online) |
+| `assets/logo.png`, `assets/author.jpg` | Images shown in the app |
 | `.gitignore` | Keeps secrets, local files and visitors' questions (`unanswered.json`) out of GitHub |
-| `run.bat` | Windows launcher script |
 | `.streamlit/config.toml` | Streamlit settings (hides error details from visitors) |
 | `.streamlit/secrets.toml` | Your passwords and keys. **Never commit it** |
-| `logo.png`, `author.jpg` | Images shown in the app |
 
-Files the app creates while running:
+Files the app creates while running (all in the `data/` folder):
 
 | File | Contents |
 |---|---|
-| `dashboard.json` | The saved charts, shared by all visitors |
-| `faq.json` | The FAQ entries |
-| `unanswered.json` | Questions the app could not answer (the admin's inbox) |
-| `sql_log.sql`, `ui_prefs.json` | Local only: the SQL of every chart, and the Appearance choice |
+| `data/dashboard.json` | The saved charts, shared by all visitors |
+| `data/faq.json` | The FAQ entries |
+| `data/unanswered.json` | Questions the app could not answer (the admin's inbox) |
+| `data/sql_log.sql`, `data/ui_prefs.json` | Local only: the SQL of every chart, and the Appearance choice |
 
 ---
 
-## Data source and admin login
+## Database and admin login
 
-**Data source.** Locally, the admin picks the data source under **Advanced: data and LLM**:
+**Database.** Locally, the admin picks where the data is read from under **Advanced: data and LLM**:
 
 - **SQL Server** (the local default): server `127.0.0.1`, database `DataAnalysis`, table `health_indicators`, ODBC Driver 17 with Windows authentication. All of these can be changed in the Advanced section.
-- **Bundled SQLite file** (`health_indicators.db`): no server needed. This is what the online app always uses, because it cannot reach SQL Server on your PC.
+- **Bundled SQLite file** (`data/health_indicators.db`): no server needed. This is what the online app always uses, because it cannot reach SQL Server on your PC.
 
-After the SQL Server table changes, run `python export_data.py` to refresh `health_indicators.db`.
+After the SQL Server table changes, run `python tools/export_data.py` to refresh `data/health_indicators.db`.
 
 **Admin login.** Set `ADMIN_PASSWORD` (see the next section), then use **🔒 Admin login** at the bottom of the sidebar. Until a password is set, admin login is switched off.
 
@@ -190,10 +203,10 @@ Add one line to `CATALOG` in `catalog.py`: `("keywords,comma,separated", "GHO_CO
 
 ## Keeping your data safe online
 
-On Streamlit Community Cloud, files written while the app runs (`dashboard.json`, `faq.json`) are **reset when the app reboots or is redeployed**. To keep them:
+On Streamlit Community Cloud, files written while the app runs (`data/dashboard.json`, `data/faq.json`) are **reset when the app reboots or is redeployed**. To keep them:
 
 1. As admin, download the files (**Advanced → Download dashboard.json**, **FAQ → Download faq.json**).
-2. Commit them to GitHub next to `app.py`. If `dashboard.json` is listed in `.gitignore`, remove that line.
+2. Commit them to GitHub in the `data` folder. If `dashboard.json` is listed in `.gitignore`, remove that line.
 
 `unanswered.json` is reset in the same way, and it holds visitors' questions. It is listed in `.gitignore` on purpose, so it is never committed to GitHub (important if the repository is public). Download it from the inbox when you want to keep a copy.
 
@@ -216,10 +229,10 @@ If your repository is public, committed files (including the SQL stored in `dash
 
 | Problem | Fix |
 |---|---|
-| "These files in your repository are out of date" | Upload the latest `app.py`, `catalog.py`, `helpers.py`, `sqlgen.py` together to the same folder, then reboot |
+| "These files in your repository are out of date" | Upload the latest `app.py`, `catalog.py`, `helpers.py`, `sqlgen.py` together to the `app` folder, then reboot |
 | "Admin login is off" | Set `ADMIN_PASSWORD` (see above) and restart |
 | Online error "near AS: syntax error" | An old chart was saved with SQL Server SQL. Update to the latest files: charts are now rebuilt for SQLite automatically |
-| Charts disappear after a reboot (online) | Commit `dashboard.json` to GitHub (see above) |
+| Charts disappear after a reboot (online) | Commit `data/dashboard.json` to GitHub (see above) |
 | Table looks dark in Light mode | Update `helpers.py` (tables are no longer flipped back to dark) |
 | The unanswered list stays empty although you asked unanswerable questions | Questions typed while logged in as admin are not saved. Log out and ask again |
 | The AI report ignores your question | Make sure a chart on that topic is on the dashboard; the report only uses charts that match the question |
