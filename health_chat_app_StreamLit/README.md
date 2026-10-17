@@ -1,6 +1,6 @@
 # Eswatini Health Dashboard
 
-**Live app: [i-health-dashboard.streamlit.app](https://i-health-dashboard.streamlit.app)**
+**Live app: [ai-health-dashboard.streamlit.app](https://ai-health-dashboard.streamlit.app)**
 
 A Streamlit app where you **ask for a health trend in plain English** and a chart appears. Each question adds a chart to a shared dashboard, with a headline number, a green/red change badge, Excel downloads and an AI-written report (Word or Markdown).
 
