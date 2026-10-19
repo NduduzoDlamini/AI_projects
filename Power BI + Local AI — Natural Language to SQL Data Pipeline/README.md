@@ -752,7 +752,7 @@ Rather than building an autonomous agent that controls the database, the project
 
 **Nduduzo Dlamini**
 
-**Network Engineer | Data Analyst | System Administrator**
+**Data Analyst & Engineer | SQL Server, ETL & AI Tooling**
 
 Interested in **Data Science, AI, SQL, networking, systems administration, and AI-powered analytics**.
 
