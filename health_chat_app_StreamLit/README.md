@@ -186,9 +186,15 @@ Security controls reduce risk but are not a substitute for deployment-specific s
 | FAQ inbox stays empty | Questions entered while logged in as admin are not saved; test while logged out |
 | AI report ignores a question | Add a chart about that topic to the dashboard; reports use matching charts |
 
-## Author
+## 👨‍💻 Author
 
 **Nduduzo Dlamini**
+
+Data Analyst & Engineer | SQL Server, ETL & AI Tooling</p>
+
+- **Portfolio:** [nduduzodlamini.com](https://nduduzodlamini.com)
+- **GitHub:** [NduduzoDlamini](https://github.com/NduduzoDlamini)
+
 
 ---
 
