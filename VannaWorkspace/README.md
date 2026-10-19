@@ -155,7 +155,7 @@ This project explores how locally hosted language models can make health data mo
 
 **Nduduzo Dlamini**
 
-Network Engineer | Data Analyst | System Administrator
+Data Analyst & Engineer | SQL Server, ETL & AI Tooling</p>
 
 - **Portfolio:** [nduduzodlamini.com](https://nduduzodlamini.com)
 - **GitHub:** [NduduzoDlamini](https://github.com/NduduzoDlamini)
