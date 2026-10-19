@@ -1,0 +1,32 @@
+GHO_CODE,GHO_DISPLAY
+GDO_q17x2x1_4,Identification of other research plans in which dementia is integrated (NCD)
+GDO_Q2x2x1_NCD,Identification of other plans in which dementia is integrated (NCD)
+NCD_BMI_18A,"Underweight among adults, BMI < 18.5 kg/m2 (age-standardized estimate) (%)"
+NCD_BMI_18C,"Underweight among adults, BMI < 18.5 kg/m2 (crude estimate) (%)"
+NCD_BMI_25A,"Overweight among adults, BMI ≥ 25 kg/m2 (age-standardized estimate) (%)"
+NCD_BMI_25C,"Overweight among adults, BMI ≥ 25 kg/m2 (crude estimate) (%)"
+NCD_BMI_30A,"Obesity among adults, BMI ≥ 30 kg/m2 (age-standardized estimate) (%)"
+NCD_BMI_30C,"Obesity among adults, BMI ≥ 30 kg/m2 (crude estimate) (%)"
+NCD_BMI_MINUS2C,"Thinness among children and adolescents, BMI-for-age < -2 standard deviations below the median (%)"
+NCD_BMI_PLUS1C,"Overweight among children and adolescents, BMI-for-age > +1 standard deviations above the median (crude estimate) (%)"
+NCD_BMI_PLUS2C,"Obesity among children and adolescents, BMI-for-age > +2 standard deviations above the median (crude estimate) (%)"
+NCD_CCS_TransFat,Existence of national policies on trans-fatty acid elimination
+NCD_CHOL_MEANHDL_A,"Mean HDL cholesterol, age-standardized"
+NCD_CHOL_MEANNONHDL_A,"Mean Non-HDL cholesterol, age-standardized"
+NCD_CHOL_MEANNONHDL_C,"Mean Non-HDL cholesterol, crude"
+NCD_CHOL_MEANTOTALCHOL_A,"Mean total cholesterol,  age-standardized"
+NCD_CHOL_MEANTOTALCHOL_C,"Mean total cholesterol,  crude"
+NCD_CXCA_SCREENED_WITHIN_TIMEPERIOD,Prevalence of cervical cancer screening  among women aged 30-49 years (%)
+NCD_DIABETES_PREVALENCE_AGESTD,"Prevalence of diabetes, age-standardized"
+NCD_DIABETES_PREVALENCE_CRUDE,"Prevalence of diabetes, crude"
+NCD_DIABETES_TREATMENT_AGESTD,"Diabetes treatment coverage, age-standardized"
+NCD_DTH_TOT,Total NCD Deaths
+NCD_PAA,Prevalence of insufficient physical activity among adults aged 18+ years (age-standardized estimate) (%)
+NCD_PAC,Prevalence of insufficient physical activity among adults aged 18+ years (crude estimate) (%)
+NCD_PAC_ADO,Insufficiently active (crude estimate)
+NCD_SENSORYFUNCTION_VISION_EREC,Vision and eyecare: Effective refractive error coverage (eREC) (%)
+NCD_UNDER70,Premature deaths due to noncommunicable diseases (NCD) as a proportion of all NCD deaths
+NCDCCS_COUNTRYRESPONSE,NCD country capacity survey response
+NCDMORT3070,"Probability (%) of dying between age 30 and exact age 70 from any of cardiovascular disease, cancer, diabetes, or chronic respiratory disease"
+ORALHEALTH_NCD_STAFF,Presence of dedicated staff for oral health working on NCDs at the MoH
+UHC_SCI_NCD,UHC Service Coverage sub-index on noncommunicable diseases

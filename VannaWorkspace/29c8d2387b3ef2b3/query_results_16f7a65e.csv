@@ -1,0 +1,13 @@
+GHO_CODE,GHO_DISPLAY
+MALARIA_CONF_CASES,Number of confirmed malaria cases
+MALARIA_EST_INCIDENCE,Estimated malaria incidence (per 1000 population at risk)
+MALARIA_EST_MORTALITY,Estimated malaria mortality rate (per 100 000 population)
+MALARIA_IMPORTED,Number of imported malaria cases
+MALARIA_INDIG,Number of indigenous malaria cases
+MALARIA_MICR_POS,Number of malaria positive cases by microscopy
+MALARIA_MICR_TEST,Number of malaria suspects examined by microscopy
+MALARIA_PF_INDIG,Number of indigenous P. falciparum malaria cases
+MALARIA_PRES_CASES,Number of presumed malaria cases
+MALARIA_RDT_POS,Number of malaria positive cases by rapid diagnostic test (RDT)
+MALARIA_SUSPECTS,Number of suspected malaria cases
+MALARIA_TOTAL_CASES,Total number of  malaria cases (presumed + confirmed cases)
