@@ -223,7 +223,7 @@ My goal is to continue developing solutions at the intersection of data engineer
 
 - **Portfolio:** [nduduzodlamini.com](https://nduduzodlamini.com)
 - **GitHub:** [NduduzoDlamini](https://github.com/NduduzoDlamini)
-- **LinkedIn:** [Connect with me](https://www.linkedin.com/)
+- **LinkedIn:** [Connect with me]([https://www.linkedin.com/](https://www.linkedin.com/in/nduduzo-dlamini-66035324b/))
 
 ---
 
