@@ -160,8 +160,6 @@ Data Analyst & Engineer | SQL Server, ETL & AI Tooling</p>
 - **Portfolio:** [nduduzodlamini.com](https://nduduzodlamini.com)
 - **GitHub:** [NduduzoDlamini](https://github.com/NduduzoDlamini)
 
----
-
 ## ⭐ If You Find This Project Interesting
 
 Feel free to explore the implementation, experiment with different local models, and adapt the architecture to your own datasets.
