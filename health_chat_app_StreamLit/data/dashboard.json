@@ -1,0 +1,50 @@
+[
+  {
+    "id": "8f43b9c3",
+    "prompt": "HIV new infections from 2015",
+    "title": "HIV new infections from 2015",
+    "sql": "SELECT\n    CAST(STARTYEAR AS INTEGER) AS [year],\n    CAST(Numeric AS REAL) AS [value],\n    [DIMENSION_CODE] AS [series]\nFROM health_indicators\nWHERE GHO_CODE = 'HIV_0000000026'\n  AND Numeric IS NOT NULL\n  AND STARTYEAR IS NOT NULL\nORDER BY [year] ASC, [series] ASC;",
+    "original_sql": "SELECT\n    CAST(STARTYEAR AS INTEGER) AS [year],\n    CAST(Numeric AS REAL) AS [value],\n    [DIMENSION_CODE] AS [series]\nFROM health_indicators\nWHERE GHO_CODE = 'HIV_0000000026'\n  AND Numeric IS NOT NULL\n  AND STARTYEAR IS NOT NULL\nORDER BY [year] ASC, [series] ASC;",
+    "code": "HIV_0000000026",
+    "label": "Number of new HIV infections",
+    "kind": "trend",
+    "chart_type": null,
+    "source": "AI (openai/gpt-oss-120b)",
+    "note": "",
+    "created": "2026-10-20 09:21",
+    "show_labels": null,
+    "show_grid": null
+  },
+  {
+    "id": "5f2fcc5a",
+    "prompt": "HIV prevelance from 2010",
+    "title": "HIV prevelance from 2010",
+    "sql": "SELECT\n    CAST(STARTYEAR AS INTEGER) AS [year],\n    CAST(Numeric AS REAL) AS [value],\n    [DIMENSION_CODE] AS [series]\nFROM health_indicators\nWHERE GHO_CODE = 'HIV_0000000001'\n  AND Numeric IS NOT NULL\n  AND STARTYEAR IS NOT NULL\nORDER BY [year] ASC, [series] ASC;",
+    "original_sql": "SELECT\n    CAST(STARTYEAR AS INTEGER) AS [year],\n    CAST(Numeric AS REAL) AS [value],\n    [DIMENSION_CODE] AS [series]\nFROM health_indicators\nWHERE GHO_CODE = 'HIV_0000000001'\n  AND Numeric IS NOT NULL\n  AND STARTYEAR IS NOT NULL\nORDER BY [year] ASC, [series] ASC;",
+    "code": "HIV_0000000001",
+    "label": "Estimated number of people (all ages) living with HIV",
+    "kind": "trend",
+    "chart_type": null,
+    "source": "AI (openai/gpt-oss-120b)",
+    "note": "",
+    "created": "2026-10-20 09:36",
+    "show_labels": null,
+    "show_grid": null
+  },
+  {
+    "id": "dbcdb807",
+    "prompt": "total NCD deaths",
+    "title": "total NCD deaths",
+    "sql": "SELECT\n    CAST(STARTYEAR AS INTEGER) AS [year],\n    CAST(Numeric AS REAL) AS [value],\n    [DIMENSION_CODE] AS [series]\nFROM health_indicators\nWHERE GHO_CODE = 'NCD_DTH_TOT'\n  AND Numeric IS NOT NULL\n  AND STARTYEAR IS NOT NULL\nORDER BY [year] ASC, [series] ASC;",
+    "original_sql": "SELECT\n    CAST(STARTYEAR AS INTEGER) AS [year],\n    CAST(Numeric AS REAL) AS [value],\n    [DIMENSION_CODE] AS [series]\nFROM health_indicators\nWHERE GHO_CODE = 'NCD_DTH_TOT'\n  AND Numeric IS NOT NULL\n  AND STARTYEAR IS NOT NULL\nORDER BY [year] ASC, [series] ASC;",
+    "code": "NCD_DTH_TOT",
+    "label": "Total NCD deaths",
+    "kind": "trend",
+    "chart_type": null,
+    "source": "AI (openai/gpt-oss-120b)",
+    "note": "",
+    "created": "2026-10-20 09:38",
+    "show_labels": null,
+    "show_grid": null
+  }
+]
