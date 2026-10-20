@@ -1352,6 +1352,205 @@ def render_card(e: dict):
 
 
 # ---------------------------------------------------------------- page
+# ---------------------------------------------------------------- About page
+def _show_view(view: str):
+    """Switch between the dashboard and the About page. The About page can also be opened with ?page=about."""
+    st.session_state["_view"] = view
+    try:
+        if view == "about":
+            st.query_params["page"] = "about"
+        else:
+            st.query_params.pop("page", None)
+    except Exception:
+        pass
+
+
+def render_about():
+    n_ind = len({c for _, c, _ in catalog.CATALOG})
+    body, _ = st.columns([3, 1])
+    with body:
+        st.markdown("## About this app")
+        if IS_CLOUD:
+            st.info("🌐 **This online version is a demo.** The full version runs offline on the author's computer, "
+                    "connected to SQL Server and to a local Qwen AI model: no internet needed, no data leaves the "
+                    "computer and no AI subscription is paid. See the **Demo vs offline** tab.")
+        else:
+            st.info("💻 **You are using the offline version.** It is designed to run fully on your own computer, with "
+                    "SQL Server for the data and a local Qwen AI model for questions, so your questions and data "
+                    "do not leave it. See the **Demo vs offline** tab.")
+        t_over, t_demo, t_use, t_roles, t_limits, t_privacy = st.tabs(
+            ["Overview", "Demo vs offline", "How to use it", "Who can do what", "Limitations", "Privacy and data"])
+
+        with t_over:
+            st.markdown(f"""
+**{PROJECT_NAME}** lets you ask a health question in plain English and get a chart back. Each question adds a chart
+to a dashboard that every visitor sees, with a headline number, a change badge, an Excel download and, if you want
+one, an AI-written report.
+
+The data is Eswatini health indicators, using the indicator codes of the World Health Organization Global Health
+Observatory. The app knows **{n_ind} indicators**: malaria, tuberculosis, HIV, non-communicable diseases, hepatitis,
+vaccine-preventable diseases and immunisation, child and maternal health, nutrition, life expectancy, health spending
+and workforce, water and sanitation, and air pollution.
+
+**Try asking**
+- `NCD trends line graph`
+- `malaria deaths 2010 to 2024 pie chart`
+- `Show me HIV prevalence 2005-2022 as a bar chart`
+
+**What you get**
+- A chart for every question, with a headline number and the change since the first year.
+- An Excel file with the data behind each chart.
+- An AI report you can download as a Word document.
+- A FAQ of common questions with ready-made answers.
+- A dashboard that gets better over time: questions the app cannot answer are saved so the admin can teach it.
+
+**How it works**
+1. Your question is matched to an indicator (and to the FAQ, if the admin has already answered a similar question).
+2. The app builds a safe, read-only database query. It always fetches all years, so changing the years in the
+   sidebar is instant.
+3. The result is drawn as a chart with a headline number.
+
+An AI model can help with unusual wording and with writing reports. If the AI is switched off or fails, built-in
+templates take over. A query written by the AI is checked before it runs, and it is rejected, and the built-in
+template used instead, if it is not a single read-only query or does not match your question.
+""")
+
+        with t_demo:
+            st.markdown("""
+**The online version is a demo.** It lets anyone try the app, but it is not the real setup.
+
+| | Online demo | Offline version |
+|---|---|---|
+| Database | A bundled copy of the data (a small file) | SQL Server on the author's computer |
+| AI that reads your questions | Built-in templates, or a hosted AI service when one is connected (with a limit on requests) | **Qwen**, a small AI model that runs on the computer itself |
+| Internet | Needed | **Not needed**: it works fully offline |
+| Where your data goes | Hosted online, so please do not type sensitive information | **Nothing leaves the computer**: no data leakage |
+| Cost | Free hosting | **No AI subscription** to pay |
+| Saved charts, FAQ and questions | On the hosting server, and may be lost when it restarts | On the computer |
+
+**Why Qwen?** The offline version uses Qwen because it is what the author's computer can handle. The model is only
+a setting, so with better hardware a larger and more capable model can be used instead, with the same app.
+""")
+
+        with t_use:
+            st.markdown("""
+**Asking a question**
+
+Name the chart type (line, bar, area, pie, scatter or table) and the years you want, and the app uses them. If you
+do not, it uses the chart type and years chosen in the sidebar. The **❓ FAQ** button lists common questions: one
+click asks it. If the admin has written an answer to a question, you see it above the charts.
+
+**Reading a chart**
+- The big number is the **total** for yearly counts (such as the number of cases) and the **latest value** for rates
+  and percentages.
+- The badge shows the change since the first year shown. Most indicators are a burden (cases, deaths, rates), so a
+  fall is **green** and a rise is **red**. For good things (vaccination and treatment coverage, life expectancy,
+  health workers, access to clean water) a rise is green and a fall is red.
+- A few indicators have no clear good direction, for example the number of notified TB cases (more can mean better
+  detection). Their badge stays **grey**. Hover over the badge to see the exact figures it compares.
+
+**Changing the view**
+
+Use the sidebar to choose the start and end year, a time frame, the chart type, data labels, horizontal lines, how
+many charts sit in a row, and Auto, Light or Dark mode. The ⚙ button on a chart changes that chart only. For
+visitors it changes their own view; the admin's changes are saved for everyone.
+
+**Downloads and reports**
+- **Excel:** the Excel button under each chart downloads the chart's title and exactly the rows and columns behind
+  it. If the chart shows only some of the years, a second sheet called "All years" holds the rest.
+- **AI report:** the **AI report** button writes a short report from the charts on the dashboard. Type a question
+  such as *How was HIV in 2024 compared to 2022?* and the report answers it first, using only the charts about that
+  topic. Download it as a Word document, which also has a data table for every chart, or as Markdown. The numbers
+  and changes are calculated by the app, not guessed by the AI. Without an AI you get a built-in summary.
+""")
+
+        with t_roles:
+            st.markdown("""
+| | Visitor (no login) | Admin (password) |
+|---|---|---|
+| Ask questions and add charts | Yes | Yes |
+| Download Excel files, ask for AI reports, use the FAQ | Yes | Yes |
+| Use the sidebar settings | Yes, except "Advanced" | All of them |
+| Change a chart's type, data labels and lines | For their own view only | Saved for everyone |
+| Rename a chart | Only charts they added in this visit | Any chart |
+| See or edit the database query (SQL) | No | Yes |
+| Remove a chart or clear the dashboard | No | Yes |
+| Choose the data source and the AI model | No | Yes |
+| Teach the app answers (FAQ) and review unanswered questions | No | Yes |
+
+Charts are shared: a chart you add is visible to every visitor, and only the admin can remove it.
+
+These rules are enforced by the app itself, not just by hiding buttons. Visitors never see the SQL or technical
+error messages.
+
+**What the admin does to improve the app.** When a visitor asks something the dashboard cannot answer, the question is
+saved. The admin reviews the saved questions, picks the right indicator and/or writes an answer, and saves it as a
+FAQ. After that, the same question (and similar ones) gets that chart and answer. The AI model itself is not
+retrained: the FAQ guides how the app matches questions, and gives the AI examples and background notes.
+""")
+
+        with t_limits:
+            st.markdown(f"""
+**Limited data**
+- The app covers **Eswatini only**, and only the {n_ind} indicators in its catalog. A question about anything else
+  cannot be answered yet. An AI report can only talk about topics that already have a chart on the dashboard.
+- Figures are mostly **yearly**. Some years are missing, and the most recent year differs from one indicator to
+  another.
+- Many figures are **estimates** (their names say "Estimated"), and others are reported counts, so the two are not
+  always comparable.
+- Where the data is split into groups (for example by sex or age), the groups are **combined** in the headline
+  number.
+- The data is **not live**. It changes only when the data file behind the app is updated.
+
+**Limited hardware**
+- The offline version runs a **small Qwen model**, because that is what the author's computer can handle. The
+  online demo uses free hosting and a limited number of AI requests. Neither uses the largest models.
+- In practice this means the AI can **misread unusual or very long questions**, and its reports are short and simple
+  and may need checking. When it cannot help, the built-in templates are used, which are less flexible.
+- To keep the app fast and affordable there are limits: up to **{ONLINE_AI_CALLS_PER_SESSION} online AI requests per
+  visit**, up to **{MAX_CHARTS} charts** on the dashboard, and AI reports cover the **{REPORT_MAX_CHARTS} newest
+  charts**.
+- A better model can be used by changing the model in the settings, and it would understand questions and write
+  reports better. It needs better hardware (or paid hosting).
+
+**Please keep in mind**
+- This is not medical advice. A trend shows what changed, not why. Check the figures before you share a report.
+- In the online demo, charts and the FAQ are saved on the hosting server and can be lost when it restarts the app.
+""")
+
+        with t_privacy:
+            st.markdown(f"""
+**Questions the dashboard cannot answer**
+
+If the dashboard cannot answer a question, the question text is saved so the admin can teach the app the answer.
+Please do not type personal details.
+- Only the **question** is saved, with the reason it failed, how many times it was asked, and when. **Who asked is
+  never saved.**
+- The same question asked again (even in a different word order) is counted once.
+- Only the 200 most recent questions are kept.
+- Questions typed by the admin, and technical failures such as a database outage, are not saved.
+- Questions the FAQ already answers are not saved.
+
+**Where your data goes**
+- **Offline version:** your questions, the data and the AI all stay on the computer. Nothing is sent to an outside
+  service.
+- **Online demo:** it is hosted online, so please do not type sensitive or personal information.
+
+**Access and security**
+- Visitors never see the database queries or technical error messages.
+- The admin tools are protected by a password, and the login locks after {MAX_LOGIN_FAILS} wrong attempts.
+- The app only runs read-only queries on the data, so nothing a visitor types can change or delete it.
+- Text you type into a chart title is treated as plain text in the Excel file, so it cannot run as a formula.
+
+**The data**
+
+The figures come from World Health Organization indicators for Eswatini, stored in a data file bundled with the app.
+The dashboard, the FAQ and the saved questions are stored on the server, so everything you add to the shared
+dashboard is visible to all visitors.
+""")
+        st.markdown("*Built by Nduduzo Dlamini.*")
+
+
 def header_html() -> str:
     logo = ""
     if LOGO_FILE.exists():
@@ -1384,11 +1583,24 @@ div[data-testid="stHorizontalBlock"]:has(.hdr-row-marker) > div[data-testid="col
     flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; }
 div[data-testid="stHorizontalBlock"]:has(.hdr-row-marker) > div:first-child { flex: 1 1 0 !important; }
 </style>""", unsafe_allow_html=True)
-if is_admin():
-    head, btn_faq, btn_report, btn_clear, btn_log = _columns([10, 1.0, 1.5, 1.0, 1.0], gap="small")
+if "_view" not in st.session_state:        # a shared link ?page=about opens the About page
+    try:
+        st.session_state["_view"] = "about" if st.query_params.get("page") == "about" else "dashboard"
+    except Exception:
+        st.session_state["_view"] = "dashboard"
+about_view = st.session_state["_view"] == "about"
+if about_view:
+    head, btn_back = _columns([10, 2.2], gap="small")
+elif is_admin():
+    head, btn_about, btn_faq, btn_report, btn_clear, btn_log = _columns([10, 0.9, 1.0, 1.5, 1.0, 1.0], gap="small")
 else:
-    head, btn_faq, btn_report = _columns([6, 1.0, 1.8], gap="small")
+    head, btn_about, btn_faq, btn_report = _columns([6, 0.9, 1.0, 1.8], gap="small")
 head.markdown(header_html(), unsafe_allow_html=True)
+if about_view:
+    btn_back.button("← Back to dashboard", key="about_back", on_click=_show_view, args=("dashboard",))
+    render_about()
+    st.stop()                                # the rest of the page is the dashboard
+btn_about.button("ℹ️ About", key="about_open", on_click=_show_view, args=("about",), help="About this app")
 render_faq_button(btn_faq)
 render_report_button(btn_report)
 if is_admin():
