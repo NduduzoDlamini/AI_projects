@@ -1,28 +1,18 @@
-# Eswatini Health Dashboard 🇸🇿
+# Eswatini Health Dashboard
 
-**Ask a health question. Get a chart.**
+A Streamlit app where you **ask for a health trend in plain English** and a chart appears. Each question adds a chart to a shared dashboard, with a headline number, a green/red change badge, Excel downloads and an AI-written report (Word or Markdown).
 
-HEAD
-The Eswatini Health Dashboard is a Streamlit app that helps people explore health indicators using plain English instead of SQL, spreadsheets, or data portals.
-
-**Try the online demo:** [ai-health-dashboard.streamlit.app](https://ai-health-dashboard.streamlit.app)
-
-> **Privacy note:** The online demo uses public WHO data and may use a hosted AI model. Do not enter confidential or personal information into it. For sensitive data, run the app locally with SQL Server and Ollama.
-
-## See it in action
-
-Ask questions such as:
-=======
 **Live app:** [i-health-dashboard.streamlit.app](https://i-health-dashboard.streamlit.app)
 
 Example questions:
- 36dfd66 (about page)
 
 - `NCD trends line graph`
 - `malaria deaths 2010 to 2024 pie chart`
 - `Show me HIV prevalence 2005-2022 as a bar chart`
 
-The app identifies a relevant health indicator, builds a read-only query, retrieves the data, and creates a visualisation.
+The data is Eswatini health indicators (World Health Organization Global Health Observatory indicator codes).
+
+---
 
 ## Online demo vs offline version
 
@@ -43,159 +33,101 @@ The **online version is a demo** so that anyone can try the app. The full setup 
 
 ## Features
 
-### Ask questions in plain English
-- Turn natural-language questions into line, bar, area, pie, or scatter charts—or a table.
-- Specify a chart type and year range in your question.
-- Use the built-in FAQ for common questions.
-- If an AI model is unavailable, built-in templates can still generate SQL.
+**Asking questions**
+- Type a question; the app finds the right indicator, builds a safe read-only SQL query, runs it and draws the chart.
+- Name a chart type (line, bar, area, pie, scatter, table) and years in the question and they are used.
+- Works with or without an AI model. If the AI is off or fails, a built-in template writes the SQL.
+- A **❓ FAQ** list of common questions, one click each (see [FAQ](#faq-teaching-the-app-your-answers)).
+- Questions the app cannot answer are saved for the admin, who can turn them into FAQ answers (see [Unanswered questions](#unanswered-questions)).
 
-### Understand the trend
-- Each chart includes a headline metric: totals for yearly counts, or the latest value for rates and percentages.
-- A change badge compares the first and latest years.
-- Badge colours reflect the configured direction of improvement: green for healthier movement, red for movement in the wrong direction, and grey where there is no clear good direction.
-- Adjust the year range, chart type, labels, grid lines, charts per row, and appearance.
+**Charts**
+- Headline number per chart: the total for yearly counts, the latest value for rates and percentages.
+- A change badge since the first year: **green** = moving in the healthier direction, **red** = the wrong way, **grey** = no clear good direction (see [Colours](#change-badge-colours)).
+- Sidebar settings: start/end year, time frame, chart type, data labels, horizontal lines, charts per row, and Auto/Light/Dark appearance.
+- A ⚙ menu on each chart for its own type, data labels and horizontal lines.
 
-### Export and report
-- Download each chart's underlying data as an Excel file.
-- Generate an AI-assisted report in Word (`.docx`) or Markdown.
-- Ask a report question to focus the report on a topic represented on the dashboard.
-- Report figures and changes are calculated in code rather than invented by the AI. Word reports also include a data table for each chart.
+**Downloads and reports**
+- **Excel per chart**: the chart's title on top, then exactly the rows and columns behind it. A second sheet, "All years", is added when the chart shows only part of the data.
+- **AI report**: a general report, or type a question ("How was HIV in 2024 compared to 2022?") and the report answers it first. Download it as **Word (.docx)**, which also has a data table for every chart, or as Markdown. The numbers and changes are calculated in code, not by the AI. Without an AI, a built-in summary is written.
 
-<<<<<<< HEAD
-### Improve answers over time
-- Questions the app cannot answer can be saved to an admin inbox.
-- An administrator can turn an unanswered question into an FAQ entry.
-- FAQ entries can provide an indicator, chart type, year range, written answer, or a combination of these.
-- The app stores the question text, not the visitor's identity. Visitors are warned not to enter personal details.
-=======
 **About page**
 - The **ℹ️ About** button opens a page that summarises the app, explains who can do what, and states the limitations (limited data and limited hardware for running bigger AI models). A visitor can be sent straight to it with `?page=about` added to the app's address.
 
 **Shared dashboard**
 - Charts are saved on the server and shown to every visitor, and they survive a page reload.
 - Visitors can add charts. Only the admin can delete them.
->>>>>>> 36dfd66 (about page)
 
-### Shared dashboard
-- Charts are saved and shown to all visitors.
-- Visitors can add charts; only the administrator can remove them.
-- On Streamlit Community Cloud, local files may reset when the app restarts or is redeployed. See [Keeping dashboard data online](#keeping-dashboard-data-online).
+---
 
-## Privacy-first local deployment
+## Roles
 
-The app is designed to support a fully local setup for work involving sensitive data:
+| | User (no login) | Admin (password) |
+|---|---|---|
+| Ask questions, add charts | Yes | Yes |
+| Excel per chart, AI report, FAQ list | Yes | Yes |
+| Sidebar settings | Yes, except "Advanced" | All |
+| Change a chart's type / data labels / lines | Own view only | Saved for everyone |
+| Rename a chart | Only charts they created in this session | Any chart |
+| See or edit the SQL | No | Yes |
+| Remove a chart, Clear all, download the SQL log | No | Yes |
+| "Advanced: data and LLM" (data source, AI, breakdown) | No | Yes |
+| "FAQ: train the answers", including the unanswered-questions inbox | No | Yes |
 
-- **Database:** SQL Server on your own computer or local network.
-- **AI:** A local Qwen model served by Ollama.
-- **Processing:** Questions, queries, charts, exports, and reports can be handled on your machine.
-- **SQL safeguards:** Only a single read-only `SELECT` query is accepted for execution.
+These rules are enforced in the code, not just by hiding buttons. Visitors also never see SQL or technical error messages (they get a generic message; the details go to the server log and to the admin).
 
-For the local privacy-focused setup, choose **SQL Server** and **Ollama** under **Advanced: data and LLM**, and leave `LLM_API_KEY` unset. In `.streamlit/config.toml`, set `gatherUsageStats = false` under `[browser]` if you want to disable Streamlit usage statistics.
-
-**Important:** “Fully offline” depends on your configuration and environment. Use local SQL Server and Ollama, do not configure an online AI endpoint, and disable usage statistics. The public demo is not the private deployment: it uses a bundled SQLite database containing public WHO data and can use a hosted AI model. Never put confidential or personal data into the online demo.
-
-## Data source
-
-The dashboard's health indicators for Eswatini come from the World Health Organization (WHO) data published on the Humanitarian Data Exchange (HDX):
-
-[WHO data for Eswatini on HDX](https://data.humdata.org/dataset/who-data-for-swz/resource/4e085174-bbff-4e15-8e23-b1aacaf92cad)
-
-The data is loaded into the `health_indicators` table, with one row per indicator, year, and breakdown. Charts, headline values, and report calculations are based on this table. Check the dataset's licence and terms on HDX before reusing the data.
+---
 
 ## How it works
 
-```text
-Question
-   |
-   v
-catalog.py  -> identify indicator, years, chart type
-   |
-   v
-sqlgen.py   -> build a database-specific SQL template
-   |           optional AI rewrite, validated before use
-   v
-app.py      -> execute query and display chart
-   |
-   v
-helpers.py  -> headline metrics, change badges, exports and reports
+```
+question ──► catalog.py ──► indicator code, years, chart type
+                │
+                ▼
+          sqlgen.py ──► SQL template (SQLite or SQL Server)
+                │          optional AI rewrite, accepted only if
+                │          read-only, right indicator, right columns
+                ▼
+          app.py ──► run query ──► chart + headline number (helpers.py)
 ```
 
-- `catalog.py` maps keywords to WHO indicator codes.
-- `sqlgen.py` creates SQL for SQLite or SQL Server.
-- AI-generated SQL is rejected if it is not a single read-only `SELECT`, does not match the planned indicator and columns, or targets the wrong database type. The built-in template is used instead.
-- The sidebar's year range can filter the returned data without running another query.
+- `catalog.py` maps words to indicator codes (for example "malaria" and "incidence" to `MALARIA_EST_INCIDENCE`).
+- `sqlgen.py` builds the SQL. The SQL always fetches all years, so the sidebar year range filters instantly without re-querying.
+- AI-written SQL is rejected if it is not a single read-only `SELECT`, does not follow the plan, or is written for the wrong database (SQL Server vs SQLite). The template is used instead.
 
-## User and admin roles
+---
 
-| Capability | Visitor | Admin |
-|---|---:|---:|
-| Ask questions and add charts | Yes | Yes |
-| Download Excel and generate reports | Yes | Yes |
-| Use the FAQ list | Yes | Yes |
-| Change chart settings for their own view | Yes | Yes |
-| Rename charts created in their session | Yes | Yes |
-| Rename any chart | No | Yes |
-| View or edit SQL | No | Yes |
-| Delete charts, clear the dashboard, or download the SQL log | No | Yes |
-| Change database, AI, and breakdown settings | No | Yes |
-| Manage FAQs and unanswered questions | No | Yes |
-
-These permissions are enforced in the app logic, not just by hiding interface controls. Visitors receive generic error messages rather than raw SQL or technical details.
-
-## Teach the dashboard with FAQs
-
-The FAQ feature does not retrain the AI model. Instead, FAQ entries guide the app when similar questions are asked.
-
-1. Log in as admin and open **FAQ: train the answers**.
-2. Add a question and alternative phrasings.
-3. Choose an indicator, chart type, and year range, and/or provide a written answer.
-4. Use **Test a question** to check which FAQ matches.
-
-The app can use matching FAQ entries to provide a chart, a written answer, or both. FAQ examples can also help the AI identify indicators and provide background context for reports.
-
-## Unanswered-question inbox
-
-When the app cannot answer a visitor's question, it can save the question text, the reason it failed, how often it was asked, and when it was asked. It does not save the visitor's identity.
-
-The inbox keeps the 200 most recent questions. Similar questions may be grouped together. An administrator can turn a question into an FAQ, dismiss it, clear the list, or download `unanswered.json`.
-
-Questions entered while logged in as admin are not saved, so administrators can test freely. Technical failures, such as a database outage, are written to server logs rather than being treated as unanswered health questions.
-
-**Privacy reminder:** Do not enter personal details into questions. If you need a formal privacy notice for your deployment, add one that reflects your organisation's actual policies and legal obligations.
-
-## Project structure
+## Project files
 
 | File | Purpose |
 |---|---|
-| `run.bat` | Windows launcher |
-| `README.md` | Project documentation |
-| `app/app.py` | Streamlit interface, roles, saved charts, FAQs, and reports |
-| `app/catalog.py` | Indicator catalog and question parsing |
-| `app/helpers.py` | Headline metrics, change colours, Excel/Word exports, report text, FAQ matching |
-| `app/sqlgen.py` | SQL generation, AI integration, and database-specific SQL handling |
-| `app/requirements.txt` | Python dependencies |
-| `tools/export_data.py` | Exports SQL Server data to the bundled SQLite database |
-| `data/health_indicators.db` | Bundled SQLite copy used online |
-| `assets/logo.png`, `assets/author.jpg` | App images |
-| `.streamlit/config.toml` | Streamlit configuration |
-| `.streamlit/secrets.toml` | Local secrets; do not commit |
+| `app.py` | The Streamlit app: pages, roles, saving, charts, FAQ, report |
+| `catalog.py` | Indicator catalog and question parsing. **Add new indicators here** |
+| `helpers.py` | KPI numbers, change colours, Excel and Word files, report text, FAQ matching |
+| `sqlgen.py` | Safe SQL generation, the AI call, converting SQL between databases |
+| `export_data.py` | Copies the table from SQL Server into `health_indicators.db` |
+| `health_indicators.db` | The bundled SQLite copy of the data (used online) |
+| `requirements.txt` | Python packages |
+| `.gitignore` | Keeps secrets, local files and visitors' questions (`unanswered.json`) out of GitHub |
+| `run.bat` | Windows launcher script |
+| `.streamlit/config.toml` | Streamlit settings (hides error details from visitors) |
+| `.streamlit/secrets.toml` | Your passwords and keys. **Never commit it** |
+| `logo.png`, `author.jpg` | Images shown in the app |
 
-Runtime files include:
+Files the app creates while running:
 
-- `data/dashboard.json` — shared dashboard charts.
-- `data/faq.json` — FAQ entries.
-- `data/unanswered.json` — unanswered-question inbox.
-- `data/sql_log.sql` and `data/ui_prefs.json` — local SQL log and appearance preferences.
+| File | Contents |
+|---|---|
+| `dashboard.json` | The saved charts, shared by all visitors |
+| `faq.json` | The FAQ entries |
+| `unanswered.json` | Questions the app could not answer (the admin's inbox) |
+| `sql_log.sql`, `ui_prefs.json` | Local only: the SQL of every chart, and the Appearance choice |
 
-## Keeping dashboard data online
+---
 
-On Streamlit Community Cloud, files written while the app runs may reset after a restart or redeployment.
+## Data source and admin login
 
-To preserve dashboard and FAQ state, download `dashboard.json` and `faq.json` from the admin interface and follow your repository's data-management process before redeploying. Be careful: committed files may be visible to anyone with access to a public repository. In particular, the dashboard file may contain SQL. The unanswered-question file may contain visitor-submitted text and is intentionally excluded from Git.
+**Data source.** Locally, the admin picks the data source under **Advanced: data and LLM**:
 
-<<<<<<< HEAD
-For persistent multi-user storage, consider moving runtime state to a database with appropriate access controls.
-=======
 - **SQL Server** (the local default): server `127.0.0.1`, database `DataAnalysis`, table `health_indicators`, ODBC Driver 17 with Windows authentication. All of these can be changed in the Advanced section.
 - **Bundled SQLite file** (`health_indicators.db`): no server needed. This is what the online app always uses, because it cannot reach SQL Server on your PC.
 
@@ -290,41 +222,32 @@ On Streamlit Community Cloud, files written while the app runs (`dashboard.json`
 If your repository is public, committed files (including the SQL stored in `dashboard.json`) are visible to anyone. For fully permanent storage, move them to a database.
 
 ---
->>>>>>> 36dfd66 (about page)
 
 ## Security notes
 
-- Only a single read-only `SELECT` is accepted for execution; statements and keywords associated with writes or administrative operations are rejected.
-- AI-generated SQL is checked against the intended indicator, columns, and database type before it can be used.
-- Admin login uses constant-time password comparison and locks after five incorrect attempts per session.
-- Visitors do not see raw SQL or technical error messages.
-- Excel exports treat visitor text as plain text to reduce spreadsheet-formula risks.
-- Keep `.streamlit/secrets.toml` out of source control.
-- For local privacy-focused use, ensure the database and AI settings point to local services and that no online AI API key or endpoint is configured.
-
-Security controls reduce risk but are not a substitute for deployment-specific security review, access controls, backups, and privacy governance.
-
-## Troubleshooting
-
-| Problem | What to check |
-|---|---|
-| Repository files are out of date | Update `app.py`, `catalog.py`, `helpers.py`, and `sqlgen.py` together, then restart the app |
-| Admin login is disabled | Set `ADMIN_PASSWORD` and restart |
-| Online SQL syntax error near `AS` | Update the app files; saved charts from older versions may contain SQL Server SQL |
-| Charts disappear after an online reboot | Review the [Keeping dashboard data online](#keeping-dashboard-data-online) section |
-| FAQ inbox stays empty | Questions entered while logged in as admin are not saved; test while logged out |
-| AI report ignores a question | Add a chart about that topic to the dashboard; reports use matching charts |
-
-## 👨‍💻 Author
-
-**Nduduzo Dlamini**
-
-Data Analyst & Engineer | SQL Server, ETL & AI Tooling</p>
-
-- **Portfolio:** [nduduzodlamini.com](https://nduduzodlamini.com)
-- **GitHub:** [NduduzoDlamini](https://github.com/NduduzoDlamini)
-
+- The admin password is compared in constant time, and the admin login locks after 5 wrong tries per session.
+- SQL is only run if it is a single read-only `SELECT`; keywords such as `INSERT`, `DROP` and `EXEC` are rejected.
+- Visitors never see SQL or raw error messages. Set `showErrorDetails = "none"` (already in `config.toml`) to hide Python errors too.
+- Keep `.streamlit/secrets.toml` out of GitHub.
+- Excel files treat visitor text as plain text, so a title cannot run as a formula.
+- Unanswered questions are stored as plain text without any visitor identity, and visitors are told so on the page. `unanswered.json` is in `.gitignore`. If you need a formal privacy notice, mention it there too.
 
 ---
 
-If you find the project useful, try the [online demo](https://ai-health-dashboard.streamlit.app) and share feedback or suggest a health question it should support.
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| "These files in your repository are out of date" | Upload the latest `app.py`, `catalog.py`, `helpers.py`, `sqlgen.py` together to the same folder, then reboot |
+| "Admin login is off" | Set `ADMIN_PASSWORD` (see above) and restart |
+| Online error "near AS: syntax error" | An old chart was saved with SQL Server SQL. Update to the latest files: charts are now rebuilt for SQLite automatically |
+| Charts disappear after a reboot (online) | Commit `dashboard.json` to GitHub (see above) |
+| Table looks dark in Light mode | Update `helpers.py` (tables are no longer flipped back to dark) |
+| The unanswered list stays empty although you asked unanswerable questions | Questions typed while logged in as admin are not saved. Log out and ask again |
+| The AI report ignores your question | Make sure a chart on that topic is on the dashboard; the report only uses charts that match the question |
+
+---
+
+## Author
+
+Nduduzo Dlamini
